@@ -52,7 +52,7 @@ def train_model(model, train_loader, val_loader, cfg, device, checkpoint_path=No
     OptCls = torch.optim.AdamW if opt_name == 'adamw' else torch.optim.Adam
     optimizer = OptCls(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=5, factor=0.5, verbose=False
+    optimizer, mode='min', patience=5, factor=0.5
     )
     criterion = nn.MSELoss()
 
