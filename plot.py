@@ -58,11 +58,12 @@ def plot_aug_comparison(results, size=224):
         ax.set_xticklabels([LABELS[m] for m in model_names], rotation=10)
         ax.set_ylabel(ylabel)
         ax.set_title(f'{ylabel.split()[0]}: bez vs. s augmentáciou ({size}×{size})')
-        ax.legend()
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2)
         ax.grid(True, axis='y', alpha=0.3)
         ax.set_ylim(bottom=0)
 
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.15)
     save(fig, f'aug_comparison_{size}.png')
 
 
@@ -164,6 +165,8 @@ def plot_training_time(results, size=224):
                     str(v), ha='center', va='bottom', fontsize=8)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
+        ax.tick_params(axis='x', labelrotation=45)
+        ax.set_xticklabels(labels, rotation=45, ha='right')
         ax.grid(True, axis='y', alpha=0.3)
         ax.set_ylim(bottom=0)
 
