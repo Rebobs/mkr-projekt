@@ -168,7 +168,7 @@ def plot_training_time(results, size=224):
         ax.tick_params(axis='x', labelrotation=45)
         ax.set_xticklabels(labels, rotation=45, ha='right')
         ax.grid(True, axis='y', alpha=0.3)
-        ax.set_ylim(bottom=0)
+        ax.set_ylim(bottom=0, top=max(val) * 1.15)
 
     fig.tight_layout()
     save(fig, f'training_time_{size}.png')
@@ -194,6 +194,7 @@ def plot_complexity(results):
     ax.set_ylabel('Počet parametrov')
     ax.set_title('Komplexnosť modelov')
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/1e6:.0f}M'))
+    ax.set_ylim(top=max(params) * 1.15)
     ax.grid(True, axis='y', alpha=0.3)
     fig.tight_layout()
     save(fig, 'model_complexity.png')
