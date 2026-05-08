@@ -23,9 +23,10 @@ def save(fig, name):
     plt.close(fig)
     print(f"  Saved: {path}")
 
+
 def plot_aug_comparison(results, size=224):
     """Bar chart: MAE a RMSE bez aug vs. s augmentáciou."""
-    subset = [r for r in results if r['input_size'] == size]
+    subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     model_names = list(dict.fromkeys(r['model'] for r in subset))
     x = np.arange(len(model_names))
     w = 0.35
@@ -36,7 +37,7 @@ def plot_aug_comparison(results, size=224):
         no_aug   = [next(r[metric] for r in subset if r['model']==m and not r['augmentation']) for m in model_names]
         with_aug = [next(r[metric] for r in subset if r['model']==m and     r['augmentation']) for m in model_names]
 
-        b1 = ax.bar(x - w/2, no_aug,   w, label='Bez augmentácie',    color='#90CAF9', edgecolor='#1565C0')
+        b1 = ax.bar(x - w/2, no_aug,   w, label='Bez augmentácie',   color='#90CAF9', edgecolor='#1565C0')
         b2 = ax.bar(x + w/2, with_aug, w, label='S aug. (rot. 90°)', color='#A5D6A7', edgecolor='#2E7D32')
 
         for bar in list(b1) + list(b2):
@@ -54,9 +55,10 @@ def plot_aug_comparison(results, size=224):
     fig.tight_layout()
     save(fig, f'aug_comparison_{size}.png')
 
+
 def plot_training_curves(results, size=224):
-    """MAE na validačnej množine počas trénovania."""
-    subset = [r for r in results if r['input_size'] == size]
+    """Val MAE počas trénovania."""
+    subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     fig, ax = plt.subplots(figsize=(10, 5))
 
     for r in subset:
@@ -73,11 +75,14 @@ def plot_training_curves(results, size=224):
     fig.tight_layout()
     save(fig, f'training_curves_{size}.png')
 
+
 def plot_pred_vs_actual(results, size=224):
     """Scatter: predikovaná vs. skutočná hodnota."""
-    subset = [r for r in results if r['input_size'] == size]
+    subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     n      = len(subset)
-    fig, axes = plt.subplots(2, (n + 1) // 2, figsize=(5 * ((n + 1) // 2), 9))
+    cols   = min(3, n)
+    rows   = (n + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
     axes = np.array(axes).flatten()
 
     for i, r in enumerate(subset):
@@ -100,29 +105,110 @@ def plot_pred_vs_actual(results, size=224):
     fig.tight_layout()
     save(fig, f'pred_vs_actual_{size}.png')
 
+
 def plot_input_sizes(results):
-    """MAE pre každý model podľa veľkosti vstupu (s augmentáciou)."""
-    subset = [r for r in results if r['augmentation']]
-    if not subset:
+    """MAE podľa veľkosti vstupu pre každý model."""
+    subset = [r for r in results if r.get('train_frac', 1.0) == 1.0]
+    sizes  = sorted({r['input_size'] for r in subset})
+    if len(sizes) < 2:
         return
+
     model_names = list(dict.fromkeys(r['model'] for r in subset))
-    sizes       = sorted({r['input_size'] for r in subset})
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    for ax, aug, title in [(axes[0], False, 'Bez augmentácie'),
+                           (axes[1], True,  'S augmentáciou')]:
+        s = [r for r in subset if r['augmentation'] == aug]
+        for m in model_names:
+            maes = [next((r['test_mae'] for r in s if r['model']==m and r['input_size']==sz), None) for sz in sizes]
+            ax.plot(sizes, maes, marker='o', label=LABELS[m], color=COLORS[m], linewidth=2)
+        ax.set_xlabel('Veľkosť vstupu (px)')
+        ax.set_ylabel('Test MAE (W/m²)')
+        ax.set_title(f'Vplyv veľkosti vstupu — {title}')
+        ax.set_xticks(sizes)
+        ax.set_xticklabels([f'{s}×{s}' for s in sizes])
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    save(fig, 'input_sizes_mae.png')
+
+
+def plot_training_time(results, size=224):
+    """Bar chart: čas trénovania a počet epoch."""
+    subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
+    labels = [f"{LABELS[r['model']]}\n({'aug' if r['augmentation'] else 'no aug'})" for r in subset]
+    times  = [r['total_time_s'] for r in subset]
+    epochs = [r.get('best_epoch', r.get('total_epochs', 0)) for r in subset]
+    colors = [COLORS[r['model']] for r in subset]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    for val, ylabel, title, ax in [
+        (times,  'Čas (s)',   f'Celkový čas trénovania ({size}×{size})', axes[0]),
+        (epochs, 'Epocha',   f'Najlepšia epocha ({size}×{size})',        axes[1]),
+    ]:
+        bars = ax.bar(labels, val, color=colors, edgecolor='white')
+        for bar, v in zip(bars, val):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    str(v), ha='center', va='bottom', fontsize=8)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(True, axis='y', alpha=0.3)
+        ax.set_ylim(bottom=0)
+
+    fig.tight_layout()
+    save(fig, f'training_time_{size}.png')
+
+
+def plot_complexity(results):
+    """Bar chart: počet parametrov modelov."""
+    seen, rows = set(), []
+    for r in results:
+        if r['model'] not in seen:
+            seen.add(r['model'])
+            rows.append(r)
+
+    model_names = [r['model'] for r in rows]
+    params      = [r['n_params'] for r in rows]
+    colors      = [COLORS[m] for m in model_names]
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+    bars = ax.bar([LABELS[m] for m in model_names], params, color=colors, edgecolor='white')
+    for bar, v in zip(bars, params):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() * 1.02,
+                f'{v/1e6:.1f}M', ha='center', va='bottom', fontsize=9)
+    ax.set_ylabel('Počet parametrov')
+    ax.set_title('Komplexnosť modelov')
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/1e6:.0f}M'))
+    ax.grid(True, axis='y', alpha=0.3)
+    fig.tight_layout()
+    save(fig, 'model_complexity.png')
+
+
+def plot_train_size_effect(results, size=224):
+    """MAE vs. počet trénovacích vzoriek (ak boli spustené s --train-fracs)."""
+    fracs = sorted({r.get('train_frac', 1.0) for r in results})
+    if len(fracs) < 2:
+        return
+
+    subset      = [r for r in results if r['input_size'] == size and r['augmentation']]
+    model_names = list(dict.fromkeys(r['model'] for r in subset))
 
     fig, ax = plt.subplots(figsize=(9, 5))
-    for model_name in model_names:
-        maes = [next((r['test_mae'] for r in subset
-                      if r['model'] == model_name and r['input_size'] == s), None) for s in sizes]
-        ax.plot(sizes, maes, marker='o', label=LABELS[model_name], color=COLORS[model_name], linewidth=2)
+    for m in model_names:
+        n_trains = [next((r['n_train'] for r in subset if r['model']==m and r.get('train_frac')==f), None) for f in fracs]
+        maes     = [next((r['test_mae'] for r in subset if r['model']==m and r.get('train_frac')==f), None) for f in fracs]
+        ax.plot(n_trains, maes, marker='o', label=LABELS[m], color=COLORS[m], linewidth=2)
 
-    ax.set_xlabel('Veľkosť vstupu (px)')
+    ax.set_xlabel('Počet trénovacích vzoriek')
     ax.set_ylabel('Test MAE (W/m²)')
-    ax.set_title('Vplyv veľkosti vstupu na MAE (s augmentáciou)')
-    ax.set_xticks(sizes)
-    ax.set_xticklabels([f'{s}×{s}' for s in sizes])
+    ax.set_title('Vplyv počtu trénovacích vzoriek na MAE (s augmentáciou)')
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    save(fig, 'input_sizes_mae.png')
+    save(fig, 'train_size_effect.png')
+
 
 def main():
     if not os.path.exists(RESULTS_FILE):
@@ -134,13 +220,16 @@ def main():
         results = json.load(f)
     print(f"Načítaných {len(results)} výsledkov.")
 
-    sizes = sorted({r['input_size'] for r in results})
+    sizes        = sorted({r['input_size'] for r in results})
     default_size = 224 if 224 in sizes else sizes[0]
 
     plot_aug_comparison(results,   size=default_size)
     plot_training_curves(results,  size=default_size)
     plot_pred_vs_actual(results,   size=default_size)
     plot_input_sizes(results)
+    plot_training_time(results,    size=default_size)
+    plot_complexity(results)
+    plot_train_size_effect(results, size=default_size)
 
     print(f"\nVšetky grafy uložené do {PLOTS_DIR}/")
 

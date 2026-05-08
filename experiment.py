@@ -48,12 +48,16 @@ def make_transform(size, augment=False):
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
     return transforms.Compose(ops)
 
-def get_loaders(size, augment):
+def get_loaders(size, augment, train_frac=1.0):
     df      = pd.read_csv(os.path.join(DATA_DIR, 'labels.csv'))
     img_dir = os.path.join(DATA_DIR, 'images')
 
-    train_df, tmp_df = train_test_split(df,      test_size=0.30, random_state=SEED)
-    val_df,  test_df = train_test_split(tmp_df,  test_size=0.50, random_state=SEED)
+    train_df, tmp_df = train_test_split(df,       test_size=0.30, random_state=SEED)
+    val_df,  test_df = train_test_split(tmp_df,   test_size=0.50, random_state=SEED)
+
+    # Podmnožina trénovacích dát pre experiment so zvyšovaním počtu vzoriek
+    if train_frac < 1.0:
+        train_df = train_df.sample(frac=train_frac, random_state=SEED)
 
     eval_tf = make_transform(size, augment=False)
     return (
@@ -63,6 +67,7 @@ def get_loaders(size, augment):
                    batch_size=BATCH_SIZE, shuffle=False, num_workers=2),
         DataLoader(SkyDataset(test_df,  img_dir, eval_tf),
                    batch_size=BATCH_SIZE, shuffle=False, num_workers=2),
+        len(train_df),
     )
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -108,18 +113,22 @@ def evaluate(model, loader, device):
     }
 
 # ── Single experiment ─────────────────────────────────────────────────────────
-def run(model_name, size, augment, epochs, device):
-    print(f"\n{'='*55}")
-    print(f"  {model_name} | {size}x{size} | aug={'yes' if augment else 'no'}")
-    print(f"{'='*55}")
+def run(model_name, size, augment, epochs, lr, device, train_frac=1.0):
+    print(f"\n{'='*60}")
+    print(f"  {model_name} | {size}x{size} | aug={'yes' if augment else 'no'} | "
+          f"lr={lr} | train_frac={train_frac:.0%}")
+    print(f"{'='*60}")
 
-    train_loader, val_loader, test_loader = get_loaders(size, augment)
+    train_loader, val_loader, test_loader, n_train = get_loaders(size, augment, train_frac)
+    print(f"  Trénovacích vzoriek: {n_train}")
+
     model     = get_model(model_name).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
     best_val_mae = float('inf')
     best_weights = None
+    best_epoch   = 0
     no_improve   = 0
     train_losses, val_maes = [], []
     t0 = time.time()
@@ -137,25 +146,32 @@ def run(model_name, size, augment, epochs, device):
 
         if improved:
             best_val_mae = val['mae']
+            best_epoch   = epoch
             best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             no_improve   = 0
         else:
             no_improve += 1
             if no_improve >= PATIENCE:
-                print(f"  Early stopping (best epoch: {epoch - PATIENCE})")
+                print(f"  Early stopping (best epoch: {best_epoch})")
                 break
 
     model.load_state_dict(best_weights)
     test = evaluate(model, test_loader, device)
+    total_time = round(time.time() - t0, 1)
     print(f"\n  TEST → MAE={test['mae']:.4f}  RMSE={test['rmse']:.4f}  "
-          f"R²={test['r2']:.6f}  time={time.time()-t0:.0f}s")
+          f"R²={test['r2']:.6f}  time={total_time}s")
 
     return {
         'model':        model_name,
         'input_size':   size,
         'augmentation': augment,
+        'lr':           lr,
+        'train_frac':   train_frac,
+        'n_train':      n_train,
         'n_params':     sum(p.numel() for p in model.parameters()),
-        'total_time_s': round(time.time() - t0, 1),
+        'best_epoch':   best_epoch,
+        'total_epochs': len(train_losses),
+        'total_time_s': total_time,
         'test_mae':     round(test['mae'],  4),
         'test_rmse':    round(test['rmse'], 4),
         'test_r2':      round(test['r2'],   6),
@@ -168,14 +184,17 @@ def run(model_name, size, augment, epochs, device):
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--models', nargs='+', default=MODELS)
-    p.add_argument('--sizes',  nargs='+', type=int, default=INPUT_SIZES)
-    p.add_argument('--epochs', type=int,  default=EPOCHS)
+    p.add_argument('--models',      nargs='+', default=MODELS)
+    p.add_argument('--sizes',       nargs='+', type=int,   default=INPUT_SIZES)
+    p.add_argument('--epochs',      type=int,              default=EPOCHS)
+    p.add_argument('--lr',          type=float,            default=LR)
+    p.add_argument('--train-fracs', nargs='+', type=float, default=[1.0],
+                   help='Frakcie trénovacích dát, napr. --train-fracs 0.25 0.5 0.75 1.0')
     args = p.parse_args()
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Archivuj predchádzajúce výsledky ak existujú
+    # Archivuj predchádzajúce výsledky
     existing = os.path.join(RESULTS_DIR, 'results.json')
     if os.path.exists(existing):
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -191,19 +210,24 @@ def main():
     print(f"Device: {device}")
 
     results = []
-    for model_name in args.models:
-        for size in args.sizes:
-            for augment in [False, True]:
-                results.append(run(model_name, size, augment, args.epochs, device))
-                with open(os.path.join(RESULTS_DIR, 'results.json'), 'w') as f:
-                    json.dump(results, f, indent=2)
+    for train_frac in args.train_fracs:
+        for model_name in args.models:
+            for size in args.sizes:
+                for augment in [False, True]:
+                    results.append(run(
+                        model_name, size, augment, args.epochs,
+                        args.lr, device, train_frac,
+                    ))
+                    with open(os.path.join(RESULTS_DIR, 'results.json'), 'w') as f:
+                        json.dump(results, f, indent=2)
 
     skip = {'train_losses', 'val_maes', 'y_true', 'y_pred'}
     df   = pd.DataFrame([{k: v for k, v in r.items() if k not in skip} for r in results])
     df.to_csv(os.path.join(RESULTS_DIR, 'summary.csv'), index=False)
 
-    print("\n" + "="*55 + "\nSUMMARY\n" + "="*55)
-    print(df[['model', 'input_size', 'augmentation', 'test_mae', 'test_rmse', 'test_r2']].to_string(index=False))
+    print("\n" + "="*60 + "\nSUMMARY\n" + "="*60)
+    print(df[['model', 'input_size', 'augmentation', 'lr',
+              'n_train', 'best_epoch', 'test_mae', 'test_rmse', 'test_r2']].to_string(index=False))
 
 if __name__ == '__main__':
     main()

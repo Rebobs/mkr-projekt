@@ -8,7 +8,6 @@ Semestrálny projekt skúmajúci, či augmentácia vstupných fotografií oblohy
 |-------|-------|
 | `experiment.py` | Dataset, modely, tréning, vyhodnotenie — celý experiment |
 | `plot.py` | Generovanie grafov z výsledkov |
-| `generate_data.py` | Syntetický dataset na testovanie |
 | `requirements.txt` | Python závislosti |
 
 ## Inštalácia
@@ -25,37 +24,42 @@ pip install -r requirements.txt
 
 ## Dataset
 
-Vlož fotografie oblohy do `data/images/` a vytvor `data/labels.csv`:
+Dataset pochádza z projektu [Eye2Sky](https://zenodo.org/records/12804613) — fotografie oblohy z nemeckých meteorologických staníc s reálnymi GHI meraniami z pyranometra (W/m²).
 
+Štruktúra:
+```
+data/
+├── images/   ← fotografie oblohy (JPG)
+└── labels.csv
+```
+
+`labels.csv`:
 ```
 filename,irradiance
-img_001.jpg,523.4
-img_002.jpg,681.2
-```
-
-Ak nemáš vlastné dáta, vygeneruj syntetické:
-
-```bash
-python generate_data.py --n 300
+AURIC_20220620134930_160.jpg,314.3
+LEEER_20220620120000_160.jpg,599.2
+...
 ```
 
 ## Spustenie
 
 ```bash
-# Spustí všetky modely × veľkosti × aug/no-aug
-python experiment.py
+# Plný experiment (všetky modely × veľkosti × aug/no-aug)
+venv/bin/python experiment.py
 
-# Rýchly test: 1 model, 1 veľkosť, 5 epoch
-python experiment.py --models resnet18 --sizes 224 --epochs 5
+# Rýchly test
+venv/bin/python experiment.py --models resnet18 --sizes 224 --epochs 5
 
-# Grafy z výsledkov
-python plot.py
+# Grafy (po dokončení experimentu)
+venv/bin/python plot.py
 ```
 
 Výsledky sa uložia do `results/`:
 - `results.json` — plné výsledky vrátane histórie trénovania
 - `summary.csv` — tabuľka metrík
 - `plots/` — grafy
+
+Pri novom spustení sa predchádzajúce výsledky automaticky archivujú do `results/archive/`.
 
 ## Modely
 
