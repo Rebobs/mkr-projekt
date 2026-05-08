@@ -1,4 +1,4 @@
-import os, json, time, random, argparse, shutil
+import os, json, time, random, shutil
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -13,12 +13,13 @@ from sklearn.metrics import r2_score
 # ── Config ────────────────────────────────────────────────────────────────────
 DATA_DIR    = 'data'
 RESULTS_DIR = 'results'
-MODELS      = ['resnet18', 'efficientnet_b0', 'mobilenet_v3_small']
-INPUT_SIZES = [224, 256]
-EPOCHS      = 20
-BATCH_SIZE  = 32
-LR          = 0.001
-PATIENCE    = 7
+MODELS         = ['resnet18', 'efficientnet_b0', 'mobilenet_v3_small']
+INPUT_SIZES    = [128, 224, 320]
+LEARNING_RATES = [0.0001, 0.001, 0.01]
+TRAIN_FRACS    = [0.25, 0.5, 0.75, 1.0]
+EPOCHS         = 20
+BATCH_SIZE     = 32
+PATIENCE       = 7
 SEED        = 42
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
@@ -27,18 +28,17 @@ class Rot90:
         return transforms.functional.rotate(img, random.choice([0, 90, 180, 270]))
 
 class SkyDataset(Dataset):
-    def __init__(self, df, img_dir, transform):
-        self.df      = df.reset_index(drop=True)
-        self.img_dir = img_dir
-        self.tf      = transform
+    def __init__(self, df, img_dir, transform, cache):
+        self.df     = df.reset_index(drop=True)
+        self.tf     = transform
+        self.imgs   = [cache[row['filename']] for _, row in self.df.iterrows()]
+        self.labels = [float(row['irradiance']) for _, row in self.df.iterrows()]
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        img = Image.open(os.path.join(self.img_dir, row['filename'])).convert('RGB')
-        return self.tf(img), torch.tensor(float(row['irradiance']), dtype=torch.float32)
+        return self.tf(self.imgs[idx]), torch.tensor(self.labels[idx], dtype=torch.float32)
 
 def make_transform(size, augment=False):
     ops = [transforms.Resize((size, size))]
@@ -48,25 +48,33 @@ def make_transform(size, augment=False):
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
     return transforms.Compose(ops)
 
-def get_loaders(size, augment, train_frac=1.0):
-    df      = pd.read_csv(os.path.join(DATA_DIR, 'labels.csv'))
-    img_dir = os.path.join(DATA_DIR, 'images')
+def load_image_cache(img_dir, filenames):
+    max_size = max(INPUT_SIZES)
+    print(f"  Načítavam obrázky do RAM (pre-resize na {max_size}px)...")
+    return {
+        fn: Image.open(os.path.join(img_dir, fn)).convert('RGB').resize(
+            (max_size, max_size), Image.BILINEAR)
+        for fn in filenames
+    }
 
-    train_df, tmp_df = train_test_split(df,       test_size=0.30, random_state=SEED)
-    val_df,  test_df = train_test_split(tmp_df,   test_size=0.50, random_state=SEED)
+def get_loaders(size, augment, cache, train_frac=1.0):
+    df = pd.read_csv(os.path.join(DATA_DIR, 'labels.csv'))
 
-    # Podmnožina trénovacích dát pre experiment so zvyšovaním počtu vzoriek
+    train_df, tmp_df = train_test_split(df,     test_size=0.30, random_state=SEED)
+    val_df,  test_df = train_test_split(tmp_df, test_size=0.50, random_state=SEED)
+
     if train_frac < 1.0:
         train_df = train_df.sample(frac=train_frac, random_state=SEED)
 
     eval_tf = make_transform(size, augment=False)
+    kw = dict(batch_size=BATCH_SIZE, num_workers=0, pin_memory=True)
     return (
-        DataLoader(SkyDataset(train_df, img_dir, make_transform(size, augment)),
-                   batch_size=BATCH_SIZE, shuffle=True,  num_workers=2),
-        DataLoader(SkyDataset(val_df,   img_dir, eval_tf),
-                   batch_size=BATCH_SIZE, shuffle=False, num_workers=2),
-        DataLoader(SkyDataset(test_df,  img_dir, eval_tf),
-                   batch_size=BATCH_SIZE, shuffle=False, num_workers=2),
+        DataLoader(SkyDataset(train_df, None, make_transform(size, augment), cache),
+                   shuffle=True,  **kw),
+        DataLoader(SkyDataset(val_df,   None, eval_tf,                       cache),
+                   shuffle=False, **kw),
+        DataLoader(SkyDataset(test_df,  None, eval_tf,                       cache),
+                   shuffle=False, **kw),
         len(train_df),
     )
 
@@ -113,13 +121,13 @@ def evaluate(model, loader, device):
     }
 
 # ── Single experiment ─────────────────────────────────────────────────────────
-def run(model_name, size, augment, epochs, lr, device, train_frac=1.0):
+def run(model_name, size, augment, epochs, lr, device, cache, train_frac=1.0):
     print(f"\n{'='*60}")
     print(f"  {model_name} | {size}x{size} | aug={'yes' if augment else 'no'} | "
           f"lr={lr} | train_frac={train_frac:.0%}")
     print(f"{'='*60}")
 
-    train_loader, val_loader, test_loader, n_train = get_loaders(size, augment, train_frac)
+    train_loader, val_loader, test_loader, n_train = get_loaders(size, augment, cache, train_frac)
     print(f"  Trénovacích vzoriek: {n_train}")
 
     model     = get_model(model_name).to(device)
@@ -183,18 +191,8 @@ def run(model_name, size, augment, epochs, lr, device, train_frac=1.0):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument('--models',      nargs='+', default=MODELS)
-    p.add_argument('--sizes',       nargs='+', type=int,   default=INPUT_SIZES)
-    p.add_argument('--epochs',      type=int,              default=EPOCHS)
-    p.add_argument('--lr',          type=float,            default=LR)
-    p.add_argument('--train-fracs', nargs='+', type=float, default=[1.0],
-                   help='Frakcie trénovacích dát, napr. --train-fracs 0.25 0.5 0.75 1.0')
-    args = p.parse_args()
-
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Archivuj predchádzajúce výsledky
     existing = os.path.join(RESULTS_DIR, 'results.json')
     if os.path.exists(existing):
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -209,15 +207,20 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
+    df      = pd.read_csv(os.path.join(DATA_DIR, 'labels.csv'))
+    img_dir = os.path.join(DATA_DIR, 'images')
+    cache   = load_image_cache(img_dir, df['filename'].tolist())
+
     results = []
-    for train_frac in args.train_fracs:
-        for model_name in args.models:
-            for size in args.sizes:
-                for augment in [False, True]:
-                    results.append(run(
-                        model_name, size, augment, args.epochs,
-                        args.lr, device, train_frac,
-                    ))
+    for lr in LEARNING_RATES:
+        for train_frac in TRAIN_FRACS:
+            for model_name in MODELS:
+                for size in INPUT_SIZES:
+                    for augment in [False, True]:
+                        results.append(run(
+                            model_name, size, augment, EPOCHS,
+                            lr, device, cache, train_frac,
+                        ))
                     with open(os.path.join(RESULTS_DIR, 'results.json'), 'w') as f:
                         json.dump(results, f, indent=2)
 
@@ -227,7 +230,8 @@ def main():
 
     print("\n" + "="*60 + "\nSUMMARY\n" + "="*60)
     print(df[['model', 'input_size', 'augmentation', 'lr',
-              'n_train', 'best_epoch', 'test_mae', 'test_rmse', 'test_r2']].to_string(index=False))
+              'n_train', 'best_epoch', 'total_time_s',
+              'test_mae', 'test_rmse', 'test_r2']].to_string(index=False))
 
 if __name__ == '__main__':
     main()

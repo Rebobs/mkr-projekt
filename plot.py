@@ -24,6 +24,16 @@ def save(fig, name):
     print(f"  Saved: {path}")
 
 
+def best_per_config(results):
+    """Pre každú kombináciu (model, size, aug, train_frac) zachová len výsledok s najnižším test_mae."""
+    best = {}
+    for r in results:
+        key = (r['model'], r['input_size'], r['augmentation'], r.get('train_frac', 1.0))
+        if key not in best or r['test_mae'] < best[key]['test_mae']:
+            best[key] = r
+    return list(best.values())
+
+
 def plot_aug_comparison(results, size=224):
     """Bar chart: MAE a RMSE bez aug vs. s augmentáciou."""
     subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
@@ -210,6 +220,33 @@ def plot_train_size_effect(results, size=224):
     save(fig, 'train_size_effect.png')
 
 
+def plot_lr_effect(results, size=224):
+    """MAE vs. learning rate pre každý model (bez a s augmentáciou)."""
+    subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
+    lrs = sorted({r['lr'] for r in subset})
+    if len(lrs) < 2:
+        return
+
+    model_names = list(dict.fromkeys(r['model'] for r in subset))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    for ax, aug, title in [(axes[0], False, 'Bez augmentácie'),
+                           (axes[1], True,  'S augmentáciou')]:
+        s = [r for r in subset if r['augmentation'] == aug]
+        for m in model_names:
+            maes = [next((r['test_mae'] for r in s if r['model'] == m and r['lr'] == lr), None) for lr in lrs]
+            ax.plot([str(lr) for lr in lrs], maes, marker='o',
+                    label=LABELS[m], color=COLORS[m], linewidth=2)
+        ax.set_xlabel('Learning rate')
+        ax.set_ylabel('Test MAE (W/m²)')
+        ax.set_title(f'Vplyv learning rate — {title} ({size}×{size})')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    save(fig, f'lr_effect_{size}.png')
+
+
 def main():
     if not os.path.exists(RESULTS_FILE):
         print(f"Nenájdený súbor {RESULTS_FILE}. Najprv spusti experiment.py.")
@@ -222,14 +259,16 @@ def main():
 
     sizes        = sorted({r['input_size'] for r in results})
     default_size = 224 if 224 in sizes else sizes[0]
+    best         = best_per_config(results)
 
-    plot_aug_comparison(results,   size=default_size)
-    plot_training_curves(results,  size=default_size)
-    plot_pred_vs_actual(results,   size=default_size)
-    plot_input_sizes(results)
-    plot_training_time(results,    size=default_size)
-    plot_complexity(results)
-    plot_train_size_effect(results, size=default_size)
+    plot_aug_comparison(best,        size=default_size)
+    plot_training_curves(best,       size=default_size)
+    plot_pred_vs_actual(best,        size=default_size)
+    plot_input_sizes(best)
+    plot_training_time(best,         size=default_size)
+    plot_complexity(best)
+    plot_train_size_effect(best,     size=default_size)
+    plot_lr_effect(results,          size=default_size)
 
     print(f"\nVšetky grafy uložené do {PLOTS_DIR}/")
 
