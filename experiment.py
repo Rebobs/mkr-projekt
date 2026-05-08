@@ -1,4 +1,5 @@
-import os, json, time, random, argparse
+import os, json, time, random, argparse, shutil
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import torch
@@ -13,11 +14,11 @@ from sklearn.metrics import r2_score
 DATA_DIR    = 'data'
 RESULTS_DIR = 'results'
 MODELS      = ['resnet18', 'efficientnet_b0', 'mobilenet_v3_small']
-INPUT_SIZES = [128, 224, 256, 320]
-EPOCHS      = 30
+INPUT_SIZES = [224, 256]
+EPOCHS      = 20
 BATCH_SIZE  = 32
 LR          = 0.001
-PATIENCE    = 10
+PATIENCE    = 7
 SEED        = 42
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
@@ -173,6 +174,19 @@ def main():
     args = p.parse_args()
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    # Archivuj predchádzajúce výsledky ak existujú
+    existing = os.path.join(RESULTS_DIR, 'results.json')
+    if os.path.exists(existing):
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archive_dir = os.path.join(RESULTS_DIR, 'archive', ts)
+        os.makedirs(archive_dir, exist_ok=True)
+        for f in ['results.json', 'summary.csv']:
+            src = os.path.join(RESULTS_DIR, f)
+            if os.path.exists(src):
+                shutil.move(src, os.path.join(archive_dir, f))
+        print(f"Predchádzajúce výsledky archivované → results/archive/{ts}/")
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
