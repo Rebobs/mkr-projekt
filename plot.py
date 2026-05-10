@@ -18,6 +18,7 @@ COLORS = {'resnet18': '#2196F3', 'efficientnet_b0': '#4CAF50', 'mobilenet_v3_sma
 LABELS = {'resnet18': 'ResNet18', 'efficientnet_b0': 'EfficientNet-B0', 'mobilenet_v3_small': 'MobileNetV3-S'}
 
 def save(fig, name):
+    # uloží graf do súboru a zatvorí figure, aby neunikala pamäť
     path = os.path.join(PLOTS_DIR, name)
     fig.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -25,7 +26,8 @@ def save(fig, name):
 
 
 def best_per_config(results):
-    """Pre každú kombináciu (model, size, aug, train_frac) zachová len výsledok s najnižším test_mae."""
+    # pre každú kombináciu (model, size, aug, train_frac) zachová len výsledok s najnižším test_mae
+    # — eliminuje vplyv rôznych learning rates pri porovnávacích grafoch
     best = {}
     for r in results:
         key = (r['model'], r['input_size'], r['augmentation'], r.get('train_frac', 1.0))
@@ -35,7 +37,7 @@ def best_per_config(results):
 
 
 def plot_aug_comparison(results, size=224):
-    """Bar chart: MAE a RMSE bez aug vs. s augmentáciou."""
+    # porovnanie MAE a RMSE bez augmentácie vs. s augmentáciou pre každý model
     subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     model_names = list(dict.fromkeys(r['model'] for r in subset))
     x = np.arange(len(model_names))
@@ -68,7 +70,7 @@ def plot_aug_comparison(results, size=224):
 
 
 def plot_training_curves(results, size=224):
-    """Val MAE počas trénovania."""
+    # priebeh validačného MAE počas epoch pre každý model (plná čiara = aug, prerušovaná = bez)
     subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     fig, ax = plt.subplots(figsize=(10, 5))
 
@@ -88,7 +90,7 @@ def plot_training_curves(results, size=224):
 
 
 def plot_pred_vs_actual(results, size=224):
-    """Scatter: predikovaná vs. skutočná hodnota."""
+    # scatter predikovaná vs. skutočná hodnota; ideálna predikcia leží na diagonále
     subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     n      = len(subset)
     cols   = min(3, n)
@@ -118,7 +120,7 @@ def plot_pred_vs_actual(results, size=224):
 
 
 def plot_input_sizes(results):
-    """MAE podľa veľkosti vstupu pre každý model."""
+    # čiarový graf MAE podľa veľkosti vstupu — zvlášť pre bez aug a s aug
     subset = [r for r in results if r.get('train_frac', 1.0) == 1.0]
     sizes  = sorted({r['input_size'] for r in subset})
     if len(sizes) < 2:
@@ -146,7 +148,7 @@ def plot_input_sizes(results):
 
 
 def plot_training_time(results, size=224):
-    """Bar chart: čas trénovania a počet epoch."""
+    # celkový čas trénovania a číslo najlepšej epochy pre každý model
     subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     labels = [f"{LABELS[r['model']]}\n({'aug' if r['augmentation'] else 'no aug'})" for r in subset]
     times  = [r['total_time_s'] for r in subset]
@@ -175,7 +177,7 @@ def plot_training_time(results, size=224):
 
 
 def plot_complexity(results):
-    """Bar chart: počet parametrov modelov."""
+    # počet parametrov každého modelu (zobrazí sa raz, bez duplicít)
     seen, rows = set(), []
     for r in results:
         if r['model'] not in seen:
@@ -201,7 +203,7 @@ def plot_complexity(results):
 
 
 def plot_train_size_effect(results, size=224):
-    """MAE vs. počet trénovacích vzoriek (ak boli spustené s --train-fracs)."""
+    # MAE v závislosti od počtu trénovacích vzoriek (25 / 50 / 75 / 100 %)
     fracs = sorted({r.get('train_frac', 1.0) for r in results})
     if len(fracs) < 2:
         return
@@ -225,7 +227,7 @@ def plot_train_size_effect(results, size=224):
 
 
 def plot_lr_effect(results, size=224):
-    """MAE vs. learning rate pre každý model (bez a s augmentáciou)."""
+    # MAE pre rôzne learning rates — ukazuje citlivosť modelov na voľbu LR
     subset = [r for r in results if r['input_size'] == size and r.get('train_frac', 1.0) == 1.0]
     lrs = sorted({r['lr'] for r in subset})
     if len(lrs) < 2:

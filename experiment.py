@@ -16,18 +16,22 @@ RESULTS_DIR = 'results'
 MODELS         = ['resnet18', 'efficientnet_b0', 'mobilenet_v3_small']
 INPUT_SIZES    = [128, 224, 320]
 LEARNING_RATES = [0.001, 0.0001, 0.01]
-TRAIN_FRACS    = [0.25, 0.5, 0.75, 1.0]
+TRAIN_FRACS    = [0.25, 0.5, 0.75, 1.0]  # frakcie datasetu pre analýzu vplyvu počtu dát
 EPOCHS         = 20
 BATCH_SIZE     = 32
-PATIENCE       = 7
-SEED        = 42
+PATIENCE       = 7   # early stopping: počet epoch bez zlepšenia
+SEED           = 42
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
+
 class Rot90:
+    # augmentácia: náhodne otočí obrázok o 0 / 90 / 180 / 270 stupňov
     def __call__(self, img):
         return transforms.functional.rotate(img, random.choice([0, 90, 180, 270]))
 
+
 class SkyDataset(Dataset):
+    # načíta obrázky z RAM cache a priradí im hodnoty žiarenia z DataFrame
     def __init__(self, df, img_dir, transform, cache):
         self.df     = df.reset_index(drop=True)
         self.tf     = transform
@@ -40,7 +44,9 @@ class SkyDataset(Dataset):
     def __getitem__(self, idx):
         return self.tf(self.imgs[idx]), torch.tensor(self.labels[idx], dtype=torch.float32)
 
+
 def make_transform(size, augment=False):
+    # zostaví pipeline: resize → (Rot90 ak augment) → tenzor → ImageNet normalizácia
     ops = [transforms.Resize((size, size))]
     if augment:
         ops.append(Rot90())
@@ -48,7 +54,10 @@ def make_transform(size, augment=False):
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
     return transforms.Compose(ops)
 
+
 def load_image_cache(img_dir, filenames):
+    # prednahrá všetky obrázky do RAM a zmenší ich na max. veľkosť vstupu,
+    # aby sa eliminovalo opakovné čítanie z disku počas trénovania
     max_size = max(INPUT_SIZES)
     print(f"  Načítavam obrázky do RAM (pre-resize na {max_size}px)...")
     return {
@@ -57,7 +66,9 @@ def load_image_cache(img_dir, filenames):
         for fn in filenames
     }
 
+
 def get_loaders(size, augment, cache, train_frac=1.0):
+    # rozdelí dataset 70/15/15, augmentáciu aplikuje len na tréning
     df = pd.read_csv(os.path.join(DATA_DIR, 'labels.csv'))
 
     train_df, tmp_df = train_test_split(df,     test_size=0.30, random_state=SEED)
@@ -79,7 +90,10 @@ def get_loaders(size, augment, cache, train_frac=1.0):
     )
 
 # ── Model ─────────────────────────────────────────────────────────────────────
+
 def get_model(name):
+    # načíta predtrénovanú sieť z ImageNetu a nahradí poslednú vrstvu
+    # jedným neurónom pre regresiu (priama predikcia hodnoty žiarenia)
     if name == 'resnet18':
         m = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
         m.fc = nn.Linear(m.fc.in_features, 1)
@@ -92,7 +106,9 @@ def get_model(name):
     return m
 
 # ── Train / Eval ──────────────────────────────────────────────────────────────
+
 def train_epoch(model, loader, optimizer, criterion, device):
+    # jedna trénovacia epocha: forward → loss → backprop → krok optimizera
     model.train()
     total = 0.0
     for imgs, labels in loader:
@@ -104,8 +120,10 @@ def train_epoch(model, loader, optimizer, criterion, device):
         total += loss.item() * imgs.size(0)
     return total / len(loader.dataset)
 
+
 @torch.no_grad()
 def evaluate(model, loader, device):
+    # vyhodnotí model na datasete a vráti MAE, RMSE, R² + samotné predikcie
     model.eval()
     preds, targets = [], []
     for imgs, labels in loader:
@@ -121,7 +139,10 @@ def evaluate(model, loader, device):
     }
 
 # ── Single experiment ─────────────────────────────────────────────────────────
+
 def run(model_name, size, augment, epochs, lr, device, cache, train_frac=1.0):
+    # spustí jeden experiment: tréning s early stoppingom, potom testovanie
+    # na konci obnoví váhy z najlepšej epochy (podľa val MAE)
     print(f"\n{'='*60}")
     print(f"  {model_name} | {size}x{size} | aug={'yes' if augment else 'no'} | "
           f"lr={lr} | train_frac={train_frac:.0%}")
@@ -190,7 +211,10 @@ def run(model_name, size, augment, epochs, lr, device, cache, train_frac=1.0):
     }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 def main():
+    # archivuje predchádzajúce výsledky, prednahrá cache a spustí všetky experimenty;
+    # výsledky sa ukladajú priebežne, aby neboli stratené pri prerušení
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     existing = os.path.join(RESULTS_DIR, 'results.json')
@@ -224,6 +248,7 @@ def main():
                     with open(os.path.join(RESULTS_DIR, 'results.json'), 'w') as f:
                         json.dump(results, f, indent=2)
 
+    # uloženie súhrnu bez veľkých polí (predikcie, histórie strát)
     skip = {'train_losses', 'val_maes', 'y_true', 'y_pred'}
     df   = pd.DataFrame([{k: v for k, v in r.items() if k not in skip} for r in results])
     df.to_csv(os.path.join(RESULTS_DIR, 'summary.csv'), index=False)
