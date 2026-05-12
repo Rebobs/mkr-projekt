@@ -55,6 +55,9 @@ class Rot90:
         return transforms.functional.rotate(img, random.choice([0, 90, 180, 270]))
 ```
 
+**Parametre `__call__`:**
+- `img` — PIL obrázok ktorý sa má otočiť (vstup z pipeline transformácií)
+
 Táto trieda predstavuje jednu augmentačnú operáciu — náhodné otočenie obrázka.
 
 `__call__` je špeciálna metóda v Pythone. Keď napíšeme `rot = Rot90()` a potom `rot(obrazok)`, zavolá sa práve táto metóda. Vďaka tomu sa `Rot90` správa ako funkcia a dá sa zaradiť do pipeline transformácií.
@@ -81,6 +84,15 @@ class SkyDataset(Dataset):
     def __getitem__(self, idx):
         return self.tf(self.imgs[idx]), torch.tensor(self.labels[idx], dtype=torch.float32)
 ```
+
+**Parametre `__init__`:**
+- `df` — pandas DataFrame s dvoma stĺpcami: `filename` (názov súboru) a `irradiance` (hodnota žiarenia v W/m²)
+- `img_dir` — cesta k priečinku s obrázkami; v tejto implementácii sa nepoužíva priamo (obrázky sú v cache), parameter zostal pre kompatibilitu
+- `transform` — pipeline transformácií (výstup `make_transform`); aplikuje sa na každý obrázok pri načítaní
+- `cache` — slovník `{názov_súboru: PIL_obrázok}` — všetky obrázky prednahrané v RAM
+
+**Parametre `__getitem__`:**
+- `idx` — celé číslo, index vzorky (0 až počet−1); DataLoader ho volá automaticky pri zostavovaní dávky
 
 Dataset je objekt, ktorý PyTorch používa na načítavanie dát počas trénovania. Musí implementovať tri metódy: `__init__`, `__len__` a `__getitem__`.
 
@@ -111,6 +123,10 @@ def make_transform(size, augment=False):
     return transforms.Compose(ops)
 ```
 
+**Parametre:**
+- `size` — cieľové rozlíšenie v pixeloch (napr. 224 → obrázok sa zmenší na 224×224)
+- `augment` — bool; ak `True`, zaradí za resize náhodné otočenie Rot90; predvolene `False`
+
 Zostaví zoznam operácií (pipeline), ktoré sa aplikujú na každý obrázok v poradí.
 
 `ops = [transforms.Resize((size, size))]` — prvá operácia je vždy zmenšenie na cieľové rozlíšenie (napr. 224×224 pixelov). Obrázky v datasete majú rôzne veľkosti, sieť vyžaduje pevnú veľkosť vstupu.
@@ -137,6 +153,10 @@ def load_image_cache(img_dir, filenames):
         for fn in filenames
     }
 ```
+
+**Parametre:**
+- `img_dir` — cesta k priečinku kde sú fyzicky uložené súbory JPG
+- `filenames` — zoznam názvov súborov (typicky `df['filename'].tolist()`)
 
 Prednahrá všetky obrázky do operačnej pamäte (RAM) pred začiatkom trénovania.
 
@@ -174,6 +194,12 @@ def get_loaders(size, augment, cache, train_frac=1.0):
         len(train_df),
     )
 ```
+
+**Parametre:**
+- `size` — rozlíšenie vstupu v pixeloch (128 / 224 / 320)
+- `augment` — bool; zapína rotačnú augmentáciu pre trénovaciu množinu
+- `cache` — RAM cache obrázkov (výstup `load_image_cache`)
+- `train_frac` — frakcia trénovacej množiny ktorá sa použije (0.25–1.0); predvolene 1.0 = celá trénovacia množina
 
 Načíta dataset, rozdelí ho a vytvorí DataLoadery — objekty ktoré automaticky vydávajú dáta po dávkach počas trénovania.
 
@@ -215,6 +241,9 @@ def get_model(name):
     return m
 ```
 
+**Parametre:**
+- `name` — reťazec identifikujúci architektúru: `'resnet18'`, `'efficientnet_b0'`, alebo `'mobilenet_v3_small'`
+
 Načíta predtrénovanú sieť z knižnice torchvision a upraví jej výstupnú vrstvu pre regresiu.
 
 **Čo je predtrénovaná sieť?** Siete boli pôvodne natrénované na ImageNet datasete — 1,2 milióna obrázkov, 1000 kategórií. Naučili sa rozpoznávať základné vizuálne vzory (hrany, textúry, tvary). Tieto znalosti prenesieme na náš problém — tomu sa hovorí transfer learning.
@@ -248,6 +277,13 @@ def train_epoch(model, loader, optimizer, criterion, device):
         total += loss.item() * imgs.size(0)
     return total / len(loader.dataset)
 ```
+
+**Parametre:**
+- `model` — PyTorch neurónová sieť (výstup `get_model`)
+- `loader` — DataLoader trénovacej množiny
+- `optimizer` — Adam optimizer inicializovaný v `run`
+- `criterion` — stratová funkcia (`nn.MSELoss`)
+- `device` — zariadenie na ktorom prebieha výpočet: `cuda` pre GPU alebo `cpu`
 
 Spustí jednu trénovaciu epochu — sieť raz prejde cez celý trénovací dataset a upraví váhy.
 
@@ -291,6 +327,11 @@ def evaluate(model, loader, device):
     }
 ```
 
+**Parametre:**
+- `model` — PyTorch neurónová sieť
+- `loader` — DataLoader validačnej alebo testovacej množiny
+- `device` — zariadenie (`cuda` alebo `cpu`)
+
 Vyhodnotí model na celom datasete a vráti metriky.
 
 `@torch.no_grad()` — dekorátor, ktorý vypne výpočet gradientov pre celú funkciu. Pri vyhodnocovaní gradienty nepotrebujeme, vypnutím ušetríme pamäť a zrýchlime výpočet.
@@ -318,6 +359,16 @@ Vyhodnotí model na celom datasete a vráti metriky.
 ```python
 def run(model_name, size, augment, epochs, lr, device, cache, train_frac=1.0):
 ```
+
+**Parametre:**
+- `model_name` — reťazec názvu modelu (odovzdáva sa do `get_model`)
+- `size` — rozlíšenie vstupu v pixeloch
+- `augment` — bool; zapína rotačnú augmentáciu
+- `epochs` — maximálny počet epoch (konštanta `EPOCHS = 20`)
+- `lr` — learning rate pre Adam optimizer (z `LEARNING_RATES`)
+- `device` — zariadenie pre výpočet (`cuda` alebo `cpu`)
+- `cache` — RAM cache obrázkov (zdieľaný naprieč všetkými experimentmi)
+- `train_frac` — frakcia trénovacej množiny; predvolene 1.0
 
 Spustí jeden kompletný experiment — tréning a testovanie jednej konfigurácie.
 
@@ -462,6 +513,10 @@ def save(fig, name):
     print(f"  Saved: {path}")
 ```
 
+**Parametre:**
+- `fig` — matplotlib Figure objekt (výstup `plt.subplots(...)`)
+- `name` — názov výstupného súboru vrátane prípony (napr. `'aug_comparison_224.png'`)
+
 Uloží matplotlib figure do súboru.
 
 `dpi=150` — rozlíšenie 150 bodov na palec. Dosť vysoké pre prezentáciu, nie zbytočne veľký súbor.
@@ -484,6 +539,9 @@ def best_per_config(results):
     return list(best.values())
 ```
 
+**Parametre:**
+- `results` — celý zoznam všetkých výsledkov načítaný z `results.json` (216 záznamov)
+
 Z výsledkov pre všetky learning rates vyberie pre každú konfiguráciu len ten najlepší výsledok.
 
 **Prečo?** Experiment testoval 3 learning rates. Pri porovnávaní vplyvu augmentácie alebo veľkosti vstupu nechceme byť znevýhodnení zlým LR — chceme porovnávať najlepší možný výsledok každej konfigurácie.
@@ -501,6 +559,10 @@ Výsledok: zoznam najlepších výsledkov, jeden pre každú unikátnu kombinác
 ```python
 def plot_aug_comparison(results, size=224):
 ```
+
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config`
+- `size` — veľkosť vstupu pre ktorú sa graf nakreslí (predvolene 224)
 
 Dvojitý bar chart: MAE a RMSE pre každý model, vedľa seba bez aug a s aug.
 
@@ -536,6 +598,10 @@ Pridá číselnú hodnotu nad každý stĺpec. `bar.get_x() + bar.get_width()/2`
 def plot_training_curves(results, size=224):
 ```
 
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config`
+- `size` — veľkosť vstupu pre ktorú sa graf nakreslí (predvolene 224)
+
 Čiarový graf: vývoj validačného MAE počas epoch pre každý model.
 
 `ls = '-' if r['augmentation'] else '--'` — plná čiara pre aug, prerušovaná pre bez aug. Vizuálne odlíšenie bez nutnosti extra farieb.
@@ -551,6 +617,10 @@ Graf umožňuje vidieť, či model konverguje (klesá), stagnuje, alebo osciluje
 ```python
 def plot_pred_vs_actual(results, size=224):
 ```
+
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config`
+- `size` — veľkosť vstupu pre ktorú sa graf nakreslí (predvolene 224)
 
 Scatter plot: predikovaná hodnota (os Y) vs. skutočná hodnota (os X) pre každý model.
 
@@ -570,6 +640,9 @@ Scatter plot: predikovaná hodnota (os Y) vs. skutočná hodnota (os X) pre kaž
 def plot_input_sizes(results):
 ```
 
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config` (obsahuje výsledky pre všetky tri veľkosti)
+
 Čiarový graf: ako sa mení MAE pri rôznych veľkostiach vstupu (128, 224, 320 px).
 
 Dva panely vedľa seba: ľavý bez augmentácie, pravý s augmentáciou. Umožňuje vidieť, či veľkosť vstupu interaguje s augmentáciou.
@@ -584,6 +657,10 @@ Dva panely vedľa seba: ľavý bez augmentácie, pravý s augmentáciou. Umožň
 def plot_training_time(results, size=224):
 ```
 
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config`
+- `size` — veľkosť vstupu pre ktorú sa graf nakreslí (predvolene 224)
+
 Dva bar charty: celkový čas trénovania a číslo najlepšej epochy pre každý model.
 
 `epochs = [r.get('best_epoch', r.get('total_epochs', 0)) for r in subset]` — preferuje `best_epoch` (epocha s najlepším val MAE), záložne `total_epochs`. Hovorí, ako skoro model konvergoval.
@@ -597,6 +674,9 @@ Dva bar charty: celkový čas trénovania a číslo najlepšej epochy pre každ�
 ```python
 def plot_complexity(results):
 ```
+
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config`; každý model sa vyskytuje viackrát, funkcia si sama vyberie prvý výskyt každého modelu
 
 Bar chart: počet parametrov každého modelu.
 
@@ -620,6 +700,10 @@ Každý model sa v results opakuje mnohokrát (rôzne LR, veľkosti...). Tento k
 def plot_train_size_effect(results, size=224):
 ```
 
+**Parametre:**
+- `results` — zoznam výsledkov po filtrácii cez `best_per_config`
+- `size` — veľkosť vstupu pre ktorú sa graf nakreslí (predvolene 224)
+
 Čiarový graf: ako závisí MAE od počtu trénovacích vzoriek.
 
 `fracs = sorted({r.get('train_frac', 1.0) for r in results})` — množina (set) unikátnych frakcií zo všetkých výsledkov, zoradená vzostupne.
@@ -637,6 +721,10 @@ def plot_train_size_effect(results, size=224):
 ```python
 def plot_lr_effect(results, size=224):
 ```
+
+**Parametre:**
+- `results` — **všetky** výsledky (nie `best_per_config`) — potrebujeme vidieť každé LR zvlášť
+- `size` — veľkosť vstupu pre ktorú sa graf nakreslí (predvolene 224)
 
 Čiarový graf: závislosť MAE od hodnoty learning rate — bez redukcie na best_per_config, pretože LR je práve tá premenná ktorú sledujeme.
 
