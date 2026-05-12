@@ -184,13 +184,47 @@ obrázok 32 (150 528 čísel) → [sieť] → 651.0 W/m²
 
 ### Krok 2: Výpočet straty (loss)
 
-Porovnáme predikcie so skutočnými hodnotami. Používame **MSE** (Mean Squared Error):
+Porovnáme predikcie so skutočnými hodnotami. Potrebujeme jedno číslo ktoré hovorí „ako veľmi sme sa mýlili". Tomu hovoríme **strata** (loss).
+
+Používame **MSE** (Mean Squared Error — stredná kvadratická chyba):
 
 $$\mathcal{L} = \frac{1}{32} \sum_{i=1}^{32} (\hat{y}_i - y_i)^2$$
 
-Konkrétne: predikcia bola 423.5, skutočnosť bola 500. Rozdiel = 76.5. Kvadrát = 5852.25. Takéto čísla sa spočítajú pre všetkých 32 obrázkov a spriemerujú.
+Rozmeníme si to na súčasti:
+- $\hat{y}_i$ = predikcia siete pre obrázok $i$ (čo sieť povedala)
+- $y_i$ = skutočná hodnota žiarenia pre obrázok $i$ (čo nameril pyranometer)
+- $(\hat{y}_i - y_i)$ = rozdiel — o koľko sme sa mýlili
+- $(\hat{y}_i - y_i)^2$ = rozdiel umocnený na druhú
+- $\frac{1}{32} \sum$ = spriemerujeme cez všetkých 32 obrázkov v dávke
 
-Prečo kvadrát a nie len rozdiel? Kvadrát zabezpečí, že chyba je vždy kladná (záporný rozdiel po kvadrovaní je kladný) a navyše väčšie chyby penalizuje viac — chyba 100 je 4× horšia ako chyba 50, nie len 2×.
+**Konkrétny príklad s číslami** pre 4 obrázky z dávky:
+
+```
+obrázok │ predikcia (ŷ) │ skutočnosť (y) │ rozdiel │ rozdiel²
+────────┼───────────────┼────────────────┼─────────┼─────────
+      1 │     423.5     │     500.0      │  -76.5  │  5852.3
+      2 │     187.2     │     200.0      │  -12.8  │   163.8
+      3 │     651.0     │     600.0      │  +51.0  │  2601.0
+      4 │     300.0     │     150.0      │ +150.0  │ 22500.0
+────────┴───────────────┴────────────────┴─────────┴─────────
+                                             priemer: 7779.3  ← MSE
+```
+
+MSE pre túto dávku = 7779.3. Toto je strata — číslo ktoré chceme minimalizovať tréningom.
+
+**Prečo umocňujeme na druhú a nie len berieme rozdiel?**
+
+Problém s prostým rozdielom: obrázok 1 má rozdiel −76.5, obrázok 3 má +51.0. Keby sme len sčítali, záporné a kladné chyby by sa navzájom rušili a výsledok by vyzeral lepší ako je.
+
+Umocnenie na druhú rieši oba problémy naraz:
+1. **Záporné číslo umocnené na druhú je vždy kladné** → (−76.5)² = 5852.3, (+51.0)² = 2601.0. Chyby sa nerušia.
+2. **Väčšie chyby sa penalizujú výrazne viac** → chyba 150 dáva 22 500, chyba 50 dáva 2 500. Chyba 3× väčšia → penalizácia 9× väčšia. Model je teda pod tlakom opravovať najmä veľké chyby.
+
+**Prečo práve MSE a nie MAE?**
+
+MAE (mean absolute error) — priemerná absolútna chyba — berieme len $|\hat{y}_i - y_i|$ bez umocňovania. Je to jednoduchšie a intuitívnejšie. Ale MSE sa lepšie hodí pre tréning, pretože derivácia MSE je plynulá (kvadratická krivka má v každom bode definovaný sklon), čo zjednodušuje výpočet gradientov v kroku 3. Derivácia MAE má v bode 0 nespojitosť (zlom), čo komplikuje optimalizáciu.
+
+Preto: **MSE používame ako trénovaciu stratu** (v kóde: `criterion = nn.MSELoss()`), ale **MAE reportujeme ako výsledok** — lebo W/m² je zrozumiteľnejšia jednotka ako (W/m²)².
 
 Strata je jedno číslo — miera celkovej chyby na tejto dávke. Čím nižšie, tým lepšie.
 
