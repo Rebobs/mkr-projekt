@@ -6,18 +6,59 @@ Tento dokument sa neodovzdáva. Slúži ako podrobný prehľad teórie pre potre
 
 ## 1. Čo je obrázok pre počítač
 
-Ľudské oko vidí obrázok ako scénu. Počítač vidí obrázok ako trojrozmernú tabuľku čísel.
+Ľudské oko vidí obrázok ako scénu. Počítač vidí obrázok ako tabuľku čísel.
 
-Každý obrázok má:
-- **šírku** — napr. 224 pixelov
-- **výšku** — napr. 224 pixelov
-- **3 kanály** — červený (R), zelený (G), modrý (B)
+Každý pixel má tri hodnoty — červená (R), zelená (G), modrá (B). Každá hodnota je číslo od 0 do 255. Čierna = 0, biela = 255.
 
-Každý pixel v každom kanáli je číslo od 0 do 255. Čierna = 0, biela = 255.
+Príklad jedného pixela:
+```
+jasne červený pixel:  R=255, G=0,   B=0
+čisto biely pixel:    R=255, G=255, B=255
+čisto čierny pixel:   R=0,   G=0,   B=0
+obloha (modrá):       R=100, G=149, B=237
+```
 
-Jeden obrázok 224×224 teda obsahuje: `224 × 224 × 3 = 150 528 čísel`.
+### Čo je tenzor a prečo tvar `(3, 224, 224)`
 
-Keď sieť dostane obrázok na vstup, dostane práve tento obrovský zoznam čísel — nie „obrázok" tak ako ho vidíme my.
+**Tenzor** = n-rozmerná tabuľka čísel. Nie je to nič iné ako zovšeobecnenie pojmu „tabuľka":
+
+- **1D tenzor** = zoznam: `[10, 20, 30]`
+- **2D tenzor** = tabuľka (riadky × stĺpce), napr. tabuľka v Exceli
+- **3D tenzor** = viac tabuliek položených na sebe — kocka čísel
+
+Jeden obrázok 224×224 pixelov je **3D tenzor tvaru `(3, 224, 224)`**:
+- prvý rozmer `3` = tri farebné kanály (R, G, B)
+- druhý rozmer `224` = výška (224 riadkov pixelov)
+- tretí rozmer `224` = šírka (224 stĺpcov pixelov)
+
+Predstav si to ako tri vrstvy tabuliek položené na sebe:
+
+```
+Kanál 1 (Červená):         Kanál 2 (Zelená):          Kanál 3 (Modrá):
+┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐
+│ 120  98  75  ...   │     │  30  45  60  ...   │     │ 200 180 170  ...   │
+│  85  92  88  ...   │     │  40  38  55  ...   │     │ 190 175 165  ...   │
+│  ...               │     │  ...               │     │  ...               │
+└────────────────────┘     └────────────────────┘     └────────────────────┘
+       224 × 224                  224 × 224                  224 × 224
+```
+
+Celkovo: `3 × 224 × 224 = 150 528 čísel` na jeden obrázok.
+
+### Prečo dávka 32 — tvar `(32, 3, 224, 224)`
+
+Sieť netrénujeme obrázok po obrázku — posielame 32 naraz (dávka / batch). Pridáme ďalší rozmer:
+
+```
+(32,      3,       224,    224  )
+  ↑       ↑         ↑       ↑
+počet  kanály    výška   šírka
+obrázkov
+```
+
+Celkovo: `32 × 3 × 224 × 224 = 4 816 896 čísel` — toto pošleme cez sieť v jednom kroku.
+
+Na výstupe dostaneme 32 predikcií — jedno číslo pre každý obrázok z dávky.
 
 ---
 
@@ -27,7 +68,7 @@ Neurónová sieť je matematická funkcia. Dostane čísla na vstupe, vydá čí
 
 ### Jeden neurón
 
-Základnou stavebnou jednotkou je **neurón**. Neurón:
+Základnou stavebnou jednotkou je **neurón**:
 1. Dostane niekoľko čísel na vstupe ($x_1, x_2, ..., x_n$)
 2. Každý vstup vynásobí svojou váhou ($w_1, w_2, ..., w_n$)
 3. Všetko sčíta, pridá bias $b$
@@ -36,9 +77,22 @@ Základnou stavebnou jednotkou je **neurón**. Neurón:
 Matematicky:
 $$\text{výstup} = f\left(\sum_{i=1}^{n} w_i x_i + b\right)$$
 
-kde $f$ je aktivačná funkcia (napr. ReLU: $f(x) = \max(0, x)$).
+**Konkrétny príklad** — neurón s dvoma vstupmi:
+```
+vstupy:   x₁ = 0.5,  x₂ = 0.8
+váhy:     w₁ = 2.0,  w₂ = -1.0
+bias:     b  = 0.1
 
-**Váhy a bias** sú parametre — čísla ktoré sieť mení počas učenia.
+súčet = (0.5 × 2.0) + (0.8 × -1.0) + 0.1
+      =  1.0  +  (-0.8)  + 0.1
+      =  0.3
+
+po ReLU: max(0, 0.3) = 0.3   ← výstup neurónu
+```
+
+**Váhy a bias** sú parametre — čísla ktoré sieť mení počas učenia. Na začiatku sú náhodné, po trénovaní sú nastavené tak aby sieť dávala správne odpovede.
+
+**ReLU** (Rectified Linear Unit) je najčastejšia aktivačná funkcia: $f(x) = \max(0, x)$. Jednoducho povedané — záporné čísla zmení na nulu, kladné nechá. Bez aktivačnej funkcie by celá sieť bola len jedna lineárna rovnica, čo by nestačilo na zachytenie zložitých vzorov.
 
 ### Vrstvy
 
@@ -50,9 +104,23 @@ vstup (obrázok) → vrstva 1 → vrstva 2 → ... → výstup (číslo)
 
 ### Konvolučné vrstvy (CNN)
 
-Naše siete sú **konvolučné** (Convolutional Neural Network). Namiesto toho aby každý neurón bol prepojený so všetkými vstupmi (čo by bolo pri obrázku 150 000 prepojení na jeden neurón), konvolučné neuróny sa pozerajú vždy len na malé okienko obrázka (napr. 3×3 pixely).
+Naše siete sú **konvolučné** (Convolutional Neural Network).
 
-Toto okienko sa posúva po celom obrázku. Táto operácia sa volá **konvolúcia** a je efektívna na rozpoznávanie lokálnych vzorov (hrany, rohy, textúry).
+Naivný prístup by bol: každý neurón je prepojený s každým pixelom. Pri 224×224 obrázku by mal jeden neurón 150 528 vstupov — to je príliš veľa parametrov.
+
+Konvolučné neuróny sa pozerajú len na malé **okienko** obrázka (napr. 3×3 pixely). Toto okienko sa posúva po celom obrázku — zľava doprava, zhora nadol — a na každej pozícii vypočíta jednu hodnotu. Výsledkom je nová tabuľka čísel, tzv. **feature mapa** — zachytáva, kde v obrázku sa nachádza konkrétny vzor (hrana, farba, textúra).
+
+```
+pôvodný obrázok          filter (3×3)          feature mapa
+┌──────────────┐          ┌───────┐             ┌──────────┐
+│ 1  2  3  4   │          │ 1  0  │             │ hodnota  │
+│ 5  6  7  8   │  ×  ...  │-1  1  │   =   ...   │  každej  │
+│ 9 10 11 12   │          │ 0  1  │             │ pozície  │
+│13 14 15 16   │          └───────┘             └──────────┘
+└──────────────┘
+```
+
+Hodnoty filtra sú váhy — sieť sa ich naučí sama. Prvé vrstvy sa naučia jednoduché filtre (detekcia hrán), hlbšie vrstvy zložitejšie (textúry, tvary, objekty).
 
 ---
 
@@ -60,11 +128,11 @@ Toto okienko sa posúva po celom obrázku. Táto operácia sa volá **konvolúci
 
 ### Problém s malým datasetom
 
-Sieť ResNet18 má **11,2 milióna parametrov**. Aby sa sieť naučila nastaviť 11 miliónov čísel správne, potrebuje veľa príkladov.
+Sieť ResNet18 má **11,2 milióna parametrov** (váh). Každú váhu treba nastaviť na správnu hodnotu. Na to potrebujeme veľa príkladov — inak sieť „uhádne" správne odpovede pre trénovacie dáta, ale na nových zlyhá.
 
 My máme 946 obrázkov. To je extrémne málo.
 
-Ak by sme trénovali od náhodných váh, sieť by sa buď vôbec nenaučila nič, alebo by sa „naučila naspamäť" trénovacie dáta a na nových obrázkoch by zlyhala. Tomu hovoríme **overfitting** (preučenie).
+Keby sme trénovali od náhodných váh, sieť by sa buď vôbec nenaučila nič, alebo by sa naučila trénovacie dáta **naspamäť** — vrátane ich náhodného šumu — a na nových obrázkoch by zlyhala. Tomu hovoríme **overfitting** (preučenie).
 
 ### Riešenie: predtrénované váhy
 
@@ -79,7 +147,7 @@ Tieto znalosti sú **prenositeľné**. Schopnosť rozpoznávať hrany a textúry
 
 ### Čo presne meníme
 
-Pôvodná výstupná vrstva siete vydáva 1000 čísel (pravdepodobnosť každej z 1000 tried ImageNetu). My potrebujeme jedno číslo. Preto:
+Pôvodná výstupná vrstva siete vydáva 1000 čísel (pravdepodobnosť každej z 1000 tried ImageNetu). My potrebujeme jedno číslo — hodnotu žiarenia. Preto:
 
 ```
 [predtrénované vrstvy: rozpoznávajú vizuálne vzory]
@@ -89,70 +157,89 @@ Pôvodná výstupná vrstva siete vydáva 1000 čísel (pravdepodobnosť každej
         predikcia žiarenia (W/m²)
 ```
 
-`nn.Linear(512, 1)` je lineárna vrstva: 512 vstupov (výstup poslednej predtrénovanej vrstvy), 1 výstup (hodnota žiarenia). Matematicky:
+`nn.Linear(512, 1)` je lineárna vrstva: zoberie 512 čísel z predposlednej vrstvy a vypočíta z nich jedno číslo. Je to v podstate vážený súčet:
 
-$$\hat{y} = \mathbf{w}^T \mathbf{x} + b$$
+$$\hat{y} = w_1 x_1 + w_2 x_2 + \ldots + w_{512} x_{512} + b$$
 
-kde $\mathbf{x}$ je 512-dimenzionálny vektor z predposlednej vrstvy, $\mathbf{w}$ je 512 váh a $b$ je bias.
+kde $x_1 ... x_{512}$ sú výstupy predposlednej vrstvy, $w_1 ... w_{512}$ sú váhy ktoré sa naučíme, $b$ je bias.
 
-Predtrénované váhy sa dolaďujú (fine-tuning) — nie sú zmrazené, ale začínajú z dobrého bodu namiesto z náhodného.
+Predtrénované váhy sa dolaďujú (**fine-tuning**) — nie sú zmrazené, ale začínajú z dobrého bodu namiesto z náhodného. Preto stačí oveľa menej dát.
 
 ---
 
 ## 4. Trénovací cyklus krok po kroku
 
-### Krok 1: Forward pass
+### Krok 1: Forward pass (dopredný prechod)
 
-Pošleme dávku 32 obrázkov cez sieť. Každý obrázok je tenzor tvaru `(3, 224, 224)`. Dávka má tvar `(32, 3, 224, 224)`. Na výstupe dostaneme 32 čísel — predikcie žiarenia.
+Vezmeme dávku 32 obrázkov. Každý má tvar `(3, 224, 224)` — 3 kanály, 224×224 pixelov. Dávka má tvar `(32, 3, 224, 224)`.
+
+Tieto čísla prechádzajú vrstvou za vrstvou celou sieťou. Každá vrstva transformuje dáta — filtruje, zmenšuje, kombinuje. Na konci dostaneme 32 čísel, každé je predikcia žiarenia pre jeden obrázok.
+
+```
+obrázok 1  (150 528 čísel) → [sieť] → 423.5 W/m²
+obrázok 2  (150 528 čísel) → [sieť] → 187.2 W/m²
+...
+obrázok 32 (150 528 čísel) → [sieť] → 651.0 W/m²
+```
 
 ### Krok 2: Výpočet straty (loss)
 
-Porovnáme predikcie so skutočnými hodnotami pomocou **MSE**:
+Porovnáme predikcie so skutočnými hodnotami. Používame **MSE** (Mean Squared Error):
 
 $$\mathcal{L} = \frac{1}{32} \sum_{i=1}^{32} (\hat{y}_i - y_i)^2$$
 
-Strata je jedno číslo — miera celkovej chyby na tejto dávke.
+Konkrétne: predikcia bola 423.5, skutočnosť bola 500. Rozdiel = 76.5. Kvadrát = 5852.25. Takéto čísla sa spočítajú pre všetkých 32 obrázkov a spriemerujú.
 
-### Krok 3: Backpropagation
+Prečo kvadrát a nie len rozdiel? Kvadrát zabezpečí, že chyba je vždy kladná (záporný rozdiel po kvadrovaní je kladný) a navyše väčšie chyby penalizuje viac — chyba 100 je 4× horšia ako chyba 50, nie len 2×.
 
-Toto je algoritmus, ktorý vypočíta gradient straty voči každej váhe siete.
+Strata je jedno číslo — miera celkovej chyby na tejto dávke. Čím nižšie, tým lepšie.
 
-**Gradient** $\frac{\partial \mathcal{L}}{\partial w}$ hovorí: „ak zvýšim váhu $w$ o veľmi malú hodnotu $\epsilon$, o koľko sa zmení strata?"
+### Krok 3: Backpropagation (spätné šírenie)
 
-Backpropagation prechádza sieť odzadu (od výstupu k vstupu) a aplikuje **chain rule** (pravidlo reťazenia derivácií):
+Teraz vieme o koľko sme sa mýlili. Potrebujeme zistiť, **ktoré váhy za to môžu** a ako ich zmeniť aby sme sa nabudúce mýlili menej.
 
-$$\frac{\partial \mathcal{L}}{\partial w_1} = \frac{\partial \mathcal{L}}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial h} \cdot \frac{\partial h}{\partial w_1}$$
+**Gradient** je kľúčový pojem. Pre každú váhu $w$ vypočítame:
 
-kde $h$ je medziľahlý výstup. V sieti s miliónmi váh sa toto robí automaticky — v PyTorche stačí zavolať `loss.backward()`.
+$$\frac{\partial \mathcal{L}}{\partial w}$$
+
+Toto čítame ako „o koľko sa zmení strata ak trošku zmením váhu $w$?" Ak je gradient kladný — zvýšenie váhy zväčší stratu, teda váhu treba znížiť. Ak záporný — váhu treba zvýšiť.
+
+Backpropagation prechádza sieť odzadu (od výstupu k vstupu) a pre každú váhu tento gradient vypočíta pomocou pravidla reťazenia derivácií. Ide o čistú matematiku — v PyTorche stačí napísať `loss.backward()` a všetky gradienty sa vypočítajú automaticky.
 
 ### Krok 4: Aktualizácia váh (Adam optimizer)
 
-Základný gradient descent by aktualizoval váhy takto:
+Teraz vieme smer. Aktualizujeme každú váhu:
 
 $$w \leftarrow w - \alpha \cdot \frac{\partial \mathcal{L}}{\partial w}$$
 
-kde $\alpha$ je learning rate (krok). Toto je ale primitívne — rovnaký krok pre všetky váhy.
+- $\alpha$ (learning rate) = veľkosť kroku. U nás 0.001.
+- Ak gradient = 2.5 a $\alpha$ = 0.001, váha sa zmení o $-0.0025$
 
-**Adam** (Adaptive Moment Estimation) je sofistikovanejší. Sleduje pre každú váhu:
-- $m_t$ — exponenciálny kĺzavý priemer gradientov (smer pohybu)
-- $v_t$ — exponenciálny kĺzavý priemer kvadrátov gradientov (variabilita)
+**Adam** je vylepšenie tohto základného postupu. Problém základného gradientného zostupu je, že každá váha dostane rovnako veľký krok. Niektoré váhy by potrebovali väčší krok, iné menší.
 
-Aktualizácia:
-$$m_t = \beta_1 m_{t-1} + (1 - \beta_1) g_t$$
-$$v_t = \beta_2 v_{t-1} + (1 - \beta_2) g_t^2$$
-$$w \leftarrow w - \alpha \cdot \frac{m_t}{\sqrt{v_t} + \epsilon}$$
+Adam si pre každú váhu pamätá históriu predchádzajúcich gradientov:
+- Ak váha **dlhodobo ide jedným smerom** → Adam jej dá väčší efektívny krok
+- Ak váha **osciluje hore-dole** → Adam jej dá menší efektívny krok
 
-Štandardné hodnoty: $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\epsilon = 10^{-8}$.
+Vďaka tomu Adam konverguje rýchlejšie a stabilnejšie. Konkrétne vzorce:
 
-Efekt: váhy ktoré oscilujú dostanú menší efektívny krok (veľké $v_t$), váhy ktoré konzistentne idú jedným smerom dostanú väčší. Adam konverguje rýchlejšie a stabilnejšie ako základný gradient descent.
+$$m_t = 0.9 \cdot m_{t-1} + 0.1 \cdot g_t \quad \text{(kĺzavý priemer smeru)}$$
+$$v_t = 0.999 \cdot v_{t-1} + 0.001 \cdot g_t^2 \quad \text{(kĺzavý priemer veľkosti)}$$
+$$w \leftarrow w - \alpha \cdot \frac{m_t}{\sqrt{v_t} + 10^{-8}}$$
+
+Kde $g_t$ je aktuálny gradient. Delenie $\sqrt{v_t}$ znormalizuje krok — váhy s veľkými gradientmi dostanú menší efektívny krok, váhy s malými dostanú väčší.
 
 ### Krok 5: Opakuj
 
-Toto sa opakuje pre každú dávku, pre každú epochu. Po každej epoche vyhodnotíme validačnú množinu (bez aktualizácie váh) — vidíme, či sa model zlepšuje na dátach ktoré nevidel počas trénovania.
+Toto sa opakuje pre každú dávku v datasete. Keď sieť prejde raz cez celý trénovací dataset, hovoríme že prebehla jedna **epocha**. My trénujeme max 20 epoch.
+
+Po každej epoche vyhodnotíme model na **validačnej množine** — dátach ktoré sieť počas trénovania nevidela — a sledujeme, či sa zlepšuje.
 
 ---
 
 ## 5. Rozdelenie datasetu a prečo
+
+946 obrázkov rozdelíme na tri časti:
 
 ### Tréning (70 %) — 662 obrázkov
 
@@ -160,106 +247,149 @@ Tieto dáta sieť vidí počas trénovania. Na nich sa počítajú gradienty a a
 
 ### Validácia (15 %) — 142 obrázkov
 
-Tieto dáta sieť nevidí počas trénovania (nepoužívajú sa na backpropagation). Po každej epoche na nich vyhodnotíme model — sledujeme, či sa model zlepšuje na nevidených dátach, alebo len na trénovacích (overfitting).
+Tieto dáta sieť **nevidí** počas trénovania — nepoužívajú sa na aktualizáciu váh. Po každej epoche na nich vyhodnotíme model. Sledujeme, či sa zlepšuje na dátach ktoré nevidela — to je skutočná miera výkonu.
 
 Validácia slúži aj na **early stopping** a výber najlepšej epochy.
 
 ### Test (15 %) — 142 obrázkov
 
-Tieto dáta sa použijú **iba raz** — na záverečné vyhodnotenie najlepšieho modelu. Ak by sme optimalizovali na testovacej množine (napr. ladili hyperparametre podľa testovacích výsledkov), výsledky by boli optimisticky skreslené a nepredstavovali by reálny výkon.
+Tieto dáta sa použijú **iba raz** — na záverečné vyhodnotenie najlepšieho modelu.
 
-**Prečo je toto dôležité?** Ak by sme použili test na ladenie, efektívne by sme ho zaradili do trénovania. Reálny výkon na úplne nových dátach by bol horší.
+**Prečo ich nemiešame s validáciou?** Keby sme ladili model podľa testovacích výsledkov (napr. „toto LR dáva lepší test, skúsme iné"), test by sa stal súčasťou trénovania. Výsledky by pôsobili lepšie ako v skutočnosti. Test musí byť „nevidený" až do konca — simuluje reálne nasadenie kde nemáme odpovede vopred.
 
 ---
 
 ## 6. Overfitting a ako mu predchádzame
 
-**Overfitting** nastane keď sa model naučí trénovacie dáta naspamäť — vrátane ich šumu a zvláštností — namiesto toho aby sa naučil všeobecné vzory.
+**Overfitting** = model sa naučí trénovacie dáta naspamäť namiesto všeobecných vzorov.
 
-Vizuálny príklad:
+Predstav si študenta ktorý sa naučí odpovede na konkrétne otázky zo skúšky naspamäť, ale nerozumie látke. Na rovakých otázkach urobí 100 %, na iných otázkach z tej istej látky prepadne.
+
+Vizuálne — čo sa deje s MAE počas trénovania:
 ```
-Trénovacia strata:  ↓↓↓↓↓↓↓↓↓↓  (klesá)
-Validačná MAE:      ↓↓↓↓↑↑↑↑↑↑  (klesá, potom rastie)
+epocha:           1    2    3    4    5    6    7    8    9   10
+trénovacia MAE: 200  160  130  110   95   85   78   72   68   65  ← stále klesá
+validačná MAE:  210  170  140  120  108  105  107  112  118  125  ← začala rásť od epochy 6
 ```
 
-Keď validačná MAE začne rásť, model sa preučuje.
+Model sa zlepšuje na trénovacích dátach, ale na nevidených sa zhoršuje — preučuje sa.
 
 ### Early stopping
 
-Sledujeme validačné MAE. Ak sa nezlepší 7 epoch za sebou, zastavíme tréning a obnovíme váhy z epochy kde bola validačná MAE najlepšia.
+Sledujeme validačné MAE. Ak sa nezlepší 7 epoch za sebou (`PATIENCE = 7`), zastavíme tréning a obnovíme váhy z epochy kde bola validačná MAE najnižšia.
 
-Toto je dôvod prečo `best_weights` ukladáme počas trénovania — nie posledné váhy, ale najlepšie.
+V príklade vyššie by sme sa zastavili po epoche 12 (6+7=13, ale optimum bolo na 5 a od 6 do 12 = 7 epoch bez zlepšenia) a vrátili by sme váhy z epochy 5.
 
 ### Transfer learning sám o sebe pomáha
 
-Predtrénované váhy sú dobrým štartovacím bodom. Model nemusí objaviť od nuly ako vyzerajú hrany — už to vie. Preto sa rýchlejšie naučí zmysluplné veci a menej preučí šum.
+Predtrénované váhy sú dobrým štartovacím bodom. Model nemusí objaviť od nuly ako vyzerajú hrany a textúry — už to vie z ImageNetu. Preto sa rýchlejšie naučí zmysluplné veci a menej skĺzne do overfittingu.
 
 ---
 
 ## 7. Normalizácia — prečo a ako
 
-Pred vstupom do siete normalizujeme pixely:
+Pred vstupom do siete upravíme hodnoty pixelov:
 
 $$x'_c = \frac{x_c - \mu_c}{\sigma_c}$$
 
-Pre každý kanál $c \in \{R, G, B\}$ zvlášť:
-- $\mu = [0.485,\ 0.456,\ 0.406]$ — priemerné hodnoty pixelov ImageNetu
-- $\sigma = [0.229,\ 0.224,\ 0.225]$ — štandardné odchýlky
+Pre každý farebný kanál zvlášť odčítame priemer a vydelíme štandardnou odchýlkou.
 
-**Prečo tieto konkrétne čísla?** Siete boli predtrénované na ImageNete a ich váhy sú kalibrované na vstup s týmto štatistickým rozložením. Ak by sme dali surové pixely (0–1), výstupy prvých vrstiev by boli úplne iné ako pri predtrénovaní — transfer learning by nefungoval správne.
+**Konkrétny príklad** — jeden pixel červeného kanála:
+```
+pôvodná hodnota:  x = 180  (číslo 0-255, po ToTensor je to 180/255 ≈ 0.706)
+priemer ImageNet: μ = 0.485
+štandardná odch.: σ = 0.229
 
-**Prečo normalizácia všeobecne?** Bez normalizácie by rôzne kanály mali rôzne rozsahy. Optimizer by musel nastaviť veľmi rôzne veľké gradienty pre rôzne váhy, čo spomaluje konvergenciu.
+normalizovaná hodnota: (0.706 - 0.485) / 0.229 ≈ 0.965
+```
+
+**Prečo tieto konkrétne čísla (0.485, 0.229 atď.)?**
+Sú to priemerné hodnoty pixelov a štandardné odchýlky vypočítané z celého ImageNet datasetu. Siete boli predtrénované na obrázkoch normalizovaných týmito číslami. Ak by sme dali iné čísla, prvé vrstvy siete by dostali úplne iný rozsah hodnôt — váhy by fungovali nesprávne a transfer learning by nepomohol.
+
+**Prečo normalizácia vôbec pomáha?**
+Bez nej by rôzne kanály mali rôzne rozsahy. Červený kanál môže mať priemer 150, modrý 80. Optimizer by musel nastaviť inak veľké kroky pre rôzne časti siete, čo spomaluje učenie. Po normalizácii majú všetky vstupy podobný rozsah (okolo 0, väčšinou -2 až +2) a sieť sa učí stabilnejšie.
 
 ---
 
 ## 8. Augmentácia — teória a prax
 
-**Augmentácia** je umelé zväčšovanie trénovacej množiny transformáciami existujúcich obrázkov. Logika: ak model vidí obrázok mačky otočenej o 90°, naučí sa, že otočenie nie je dôležité pre rozpoznanie mačky.
+**Augmentácia** = umelé zväčšovanie trénovacej množiny. Každý obrázok sa pri každej epoche náhodne transformuje — sieť teda vidí rôzne verzie toho istého obrázka.
+
+**Logika:** Ak model vidí obrázok mačky otočenej o 90°, naučí sa že otočenie neovplyvňuje to čo je na obrázku. Trénovacia množina sa efektívne zväčší (každý obrázok je 4 rôznych otočení = 4× viac dát).
 
 ### Kedy augmentácia pomáha
 
-Pri úlohách kde transformácia **nemení** triedu alebo hodnotu:
-- rozpoznávanie buniek pod mikroskopom (bunka otočená o 90° je stále bunka)
-- röntgenové snímky (zápal je zápal v akejkoľvek orientácii)
-- satelitné snímky terénu (pole otočené o 90° je stále pole)
+Pri úlohách kde transformácia **nemení** výstup:
+- rozpoznávanie buniek pod mikroskopom — bunka otočená o 90° je stále bunka
+- röntgenové snímky — zápal je zápal v akejkoľvek orientácii
+- satelitné snímky terénu — pole je pole
 
 ### Prečo pri oblohe nepomáha
 
-Fotka oblohy má **gravitáciou danú orientáciu**:
+Fotka oblohy má **fyzikálne pevnú orientáciu** — gravitácia určuje kde je hore:
 - horizont je vždy dole
-- slnko stúpa a klesá — jeho výška nad horizontom priamo určuje intenzitu žiarenia
-- oblaky v rôznych výškach nesú rôznu informáciu
+- slnko sa pohybuje v hornej časti neba — jeho výška nad horizontom priamo určuje intenzitu žiarenia
+- oblaky nízko = iná situácia ako oblaky vysoko
 
-Keď otočíme obrázok o 90°, horizont je zrazu na boku. Model dostáva fyzikálne nezmyselnú situáciu. Namiesto toho aby sa naučil „slnko vysoko = veľa žiarenia", musí sa naučiť ignorovať orientáciu — čím stráca kľúčovú informáciu.
+Keď otočíme obrázok o 90°, horizont je zrazu na boku a slnko je zboku. Toto je fyzikálne nezmyselná situácia. Model musí trénovať na reálnych aj otočených obrázkoch — namiesto toho aby sa naučil „slnko vysoko = veľa žiarenia", musí sa naučiť ignorovať orientáciu. Tým stráca práve tú informáciu ktorá je kľúčová.
 
-**Výsledok z nášho experimentu:** augmentácia zhoršila MAE o 5–20 W/m² vo všetkých konfiguráciách. Toto je zaujímavý výsledok — nie chyba, ale zmysluplný fyzikálny záver.
+**Výsledok:** augmentácia zhoršila MAE o 5–20 W/m² vo všetkých modeloch. Nie chyba — zmysluplný fyzikálny záver.
 
 ---
 
 ## 9. Metriky — hlbší pohľad
 
-### MAE vs RMSE
+Metriky sú čísla ktoré merajú kvalitu modelu. Vypočítame ich na testovacej množine po skončení trénovania.
 
-Obe merajú chybu predikcie, ale rôzne:
+### MAE — Mean Absolute Error (stredná absolútna chyba)
 
-$$\text{MAE} = \frac{1}{n}\sum|y_i - \hat{y}_i|, \qquad \text{RMSE} = \sqrt{\frac{1}{n}\sum(y_i - \hat{y}_i)^2}$$
+$$\text{MAE} = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|$$
 
-Kľúčový rozdiel: RMSE **kvadraticky penalizuje** veľké odchýlky. Ak máme jeden extrémne zlý odhad (napr. 500 W/m² chyba), RMSE to zachytí oveľa viac ako MAE.
+Postup výpočtu:
+1. Pre každý testovací obrázok: vezmi rozdiel medzi skutočnou hodnotou a predikciou, vždy ako kladné číslo
+2. Všetky tieto rozdiely spriemeruj
 
-Ak RMSE >> MAE, máme v dátach outliere — niekoľko vzoriek kde sa model veľmi mýli.
+**Príklad:**
+```
+skutočné:   500, 300, 100
+predikcie:  450, 340,  80
+rozdiely:    50,  40,  20
+MAE = (50 + 40 + 20) / 3 = 36.7 W/m²
+```
 
-### R² — prečo môže byť záporné
+MAE = 36.7 hovorí: priemerne sa mýlime o 36.7 W/m². Ľahko interpretovateľné.
 
-$$R^2 = 1 - \frac{\text{SS}_{\text{res}}}{\text{SS}_{\text{tot}}} = 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}$$
+### RMSE — Root Mean Squared Error
 
-- $\text{SS}_{\text{res}}$ — suma kvadrátov zvyškov (chyba modelu)
-- $\text{SS}_{\text{tot}}$ — celková suma kvadrátov (variabilita dát)
+$$\text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}$$
 
-Ak je chyba modelu väčšia ako variabilita dát ($\text{SS}_{\text{res}} > \text{SS}_{\text{tot}}$), R² je záporné.
+Podobné ako MAE, ale rozdiely sa najprv kvadrujú, potom spriemerujú, potom odmocnia.
 
-To nastalo pri 25 % datasetu (175 obrázkov). Model sa nenaučil nič užitočné — bol horší ako keby sme vždy predpovedali priemer.
+**Kľúčový rozdiel oproti MAE:** kvadrát penalizuje väčšie chyby oveľa viac. Chyba 100 W/m² = 10 000 vo výpočte, chyba 10 W/m² = len 100. Preto RMSE zachytí, či máme niekoľko extrémne zlých predikcií (outlierov).
 
-**Intuícia:** Priemerné žiarenie v datasete je napr. 400 W/m². Ak vždy predpovedám 400, dostanem $R^2 = 0$. Ak predpovedám horšie ako vždy predpovedať priemer, $R^2 < 0$.
+Ak RMSE >> MAE, model sa na niektorých obrázkoch mýli extrémne veľa.
+
+### R² — koeficient determinácie
+
+$$R^2 = 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}$$
+
+kde $\bar{y}$ je priemer všetkých skutočných hodnôt.
+
+**Čo to znamená intuitívne:**
+
+Menovateľ ($\sum(y_i - \bar{y})^2$) = celková variabilita v dátach — o koľko sa hodnoty žiarenia líšia navzájom.
+
+Čitateľ ($\sum(y_i - \hat{y}_i)^2$) = chyba modelu — o koľko sa predikcie líšia od skutočnosti.
+
+R² = 1 − (chyba modelu / celková variabilita)
+
+**Príklady:**
+- R² = 1.0 → model je dokonalý, žiadna chyba
+- R² = 0.54 → model vysvetlil 54 % variability, 46 % ostalo nevysvetlených
+- R² = 0 → model predpovedá vždy len priemer, rovnako neužitočný
+- R² < 0 → model je **horší** ako vždy predpovedať priemer — toto nastalo pri 25 % datasetu
+
+**Prečo R² < 0?** Ak je sieť úplne zmätená (napr. 175 obrázkov nestačilo), jej chyba je väčšia ako keby vždy tipla priemer. Čitateľ > menovateľ → R² záporné.
 
 ---
 
@@ -267,79 +397,100 @@ To nastalo pri 25 % datasetu (175 obrázkov). Model sa nenaučil nič užitočn�
 
 ### ResNet18
 
-ResNet (Residual Network) zaviedol kľúčovú inováciu: **skip connections** (reziduálne spojenia). Namiesto toho aby každá vrstva len transformovala vstup, pridá k transformácii aj pôvodný vstup:
+ResNet (Residual Network, 2015) zaviedol kľúčovú inováciu: **reziduálne spojenia** (skip connections).
 
-$$\text{výstup} = F(x) + x$$
+Bežná vrstva: `výstup = F(vstup)` — vrstva transformuje vstup.
 
-kde $F(x)$ je to čo sa vrstva naučila, $x$ je pôvodný vstup. Prečo to pomáha? Ak je $F(x) = 0$ (vrstva sa nenaučila nič), výstup je stále $x$ — gradient preteká priamo dozadu bez degradácie. Umožňuje trénovanie oveľa hlbších sietí.
+ResNet vrstva: `výstup = F(vstup) + vstup` — k transformácii sa pripočíta pôvodný vstup.
 
-ResNet18 má 18 vrstiev, 11,2M parametrov. Napriek tomu že je najväčší z trojice, vyhral — pravdepodobne preto, že jeho architektonické vzory lepšie zachytávajú vizuálne prvky oblohy.
+```
+vstup ──────────────────────────┐
+  │                             │
+  ↓                             │
+[konvolúcia + ReLU]             │  (toto je "skratka")
+  │                             │
+  ↓                             │
+[konvolúcia]                    │
+  │                             │
+  └──── + ←───────────────── ───┘
+         ↓
+       výstup
+```
+
+**Prečo to pomáha?** Problém hlbokých sietí: gradient sa pri spätnom šírení postupne zmenšuje (vanishing gradient) a neskorú vrstvám sa váhy prestanú aktualizovať. Reziduálne spojenie vytvára „skratku" cez ktorú gradient prúdi priamo — sieť sa môže trénovať aj keď je veľmi hlboká.
+
+ResNet18 má 18 vrstiev, 11.2M parametrov. Napriek tomu že je najväčší, vyhral — jeho architektonické vzory lepšie zachytávajú vizuálne prvky oblohy.
 
 ### EfficientNet-B0
 
-EfficientNet škáluje sieť systematicky — zväčšuje šírku, hĺbku aj rozlíšenie vstupu proporcionálne. B0 je základná (najmenšia) verzia. Používa **depthwise separable convolutions** — efektívnejšia varianta konvolúcie, ktorá rozdeľuje priestorovú a kanálovú konvolúciu:
+EfficientNet (2019) navrhol systematický spôsob ako škálovať sieť — zväčšovať šírku (počet filtrov), hĺbku (počet vrstiev) aj rozlíšenie vstupu proporcionálne naraz. B0 je základná, najmenšia verzia.
 
-Štandardná konvolúcia: $O(k^2 \cdot C_{in} \cdot C_{out})$ operácií
-Depthwise separable: $O(k^2 \cdot C_{in} + C_{in} \cdot C_{out})$ — výrazne menej
+Používa **depthwise separable convolutions** — konvolúcia rozdelená do dvoch krokov:
+1. Aplikuj filter na každý kanál zvlášť (priestorová informácia)
+2. Skombinuj kanály dohromady (kanálová informácia)
 
-Paradoxne bol pomalší na trénovaní napriek menšiemu počtu parametrov — jeho architektúra má viac sekvenčných operácií čo je menej paralelizovateľné na GPU.
+Výsledok: rovnaký efekt ako klasická konvolúcia, ale s výrazne menej operáciami — sieť je menšia a rýchlejšia.
+
+Napriek menšiemu počtu parametrov (4M) bol EfficientNet paradoxne **pomalší na trénovaní** ako ResNet18 (11.2M). Dôvod: jeho operácie sú sekvenčné a menej paralelizovateľné — GPU ich nemôže robiť súčasne tak dobre ako ResNet.
 
 ### MobileNetV3-Small
 
-Navrhnutý pre mobilné zariadenia — minimálny počet parametrov (1,5M) pri prijateľnom výkone. Používa **squeeze-and-excitation bloky**: globálne priemerné poolovanie → dve FC vrstvy → škálovanie kanálov. Sieť sa naučí, ktoré kanály sú dôležité pre daný vstup.
+Navrhnutý pre mobilné zariadenia — minimálny počet parametrov (1.5M) pri prijateľnom výkone.
 
-Bol najrýchlejší (~29s/experiment) ale nedosiahol kvalitu ResNetu pri plnom datasete.
+Kľúčová inovácia: **squeeze-and-excitation bloky**. Po každej konvolúcii sieť:
+1. Spriemeruje každý kanál na jedno číslo (squeeze = „stlačenie")
+2. Naučí sa váhy pre každý kanál — niektoré kanály sú dôležitejšie ako iné
+3. Vynásobí kanály týmito váhami (excitation = „vzrušenie")
+
+Efekt: sieť sa naučí, **ktoré vizuálne vzory sú dôležité** pre daný vstup a zintenzívni ich.
+
+Bol najrýchlejší (~29s/experiment) ale pri plnom datasete nedosiahol kvalitu ResNetu.
 
 ---
 
 ## 11. Veľkosť vstupu — prečo 128px vyhral
 
-Sieť spracováva obrázky fixnej veľkosti. My testujeme 128×128, 224×224, 320×320 pixelov.
+Sieť vyžaduje fixnú veľkosť vstupu. My testujeme 128×128, 224×224, 320×320.
 
 Väčší vstup v princípe nesie viac informácie. Ale:
 
-**Väčší vstup = väčší model.** Prvá konvolučná vrstva musí spracovať oveľa viac pixelov — viac výpočtov, viac váh. Sieť s väčším vstupom je efektívne komplikovanejšia.
+**Väčší vstup = väčší model.** Prvá konvolučná vrstva spracováva pixely — pri 320px je vstup 6.25× väčší ako pri 128px. To znamená viac výpočtov, a pri niektorých architektúrach aj viac parametrov v prvej vrstve.
 
-**Komplikovanejšia sieť potrebuje viac dát.** Pri 946 obrázkoch väčší vstup zvyšuje riziko overfittingu.
+**Väčší model potrebuje viac dát.** Pri 946 obrázkoch komplikovanejší model ľahšie preučí — namiesto naučenia všeobecných vzorov si zapamätá konkrétne trénovacie príklady.
 
-**Fyzikálna úvaha:** pre odhad žiarenia nie sú dôležité detaily (ostrosť hrán oblakov), ale globálne rozloženie (kde je slnko, koľko oblohy pokrývajú oblaky). 128×128 zachytáva toto globálne rozloženie dostatočne.
+**Fyzikálna úvaha:** Pre odhad žiarenia nepotrebujeme vidieť ostré hrany oblakov — stačí vedieť kde je slnko a koľko oblohy je pokrytých. 128px zachytí toto globálne rozloženie dostatočne. Väčší vstup pridáva zbytočné detaily.
 
 ---
 
 ## 12. Batch size — prečo 32
 
-**Batch size** je počet obrázkov spracovaných naraz pred jednou aktualizáciou váh.
+**Batch size** = počet obrázkov spracovaných naraz pred jednou aktualizáciou váh.
 
-**Malý batch (napr. 1–4):**
-- gradient je vypočítaný z jednej vzorky → šumivý, nestabilný
-- časté aktualizácie → pomalý tréning na GPU (GPU nie je plne vyťažené)
-- môže pomôcť uniknúť lokálnym minimám
+Prečo nie spracovávame jeden po druhom? Gradient vypočítaný z jedného obrázka je veľmi šumivý — jeden konkrétny obrázok môže byť atypický a gradient by nás viedol zlým smerom. Keď spriemerujeme gradienty cez 32 obrázkov, dostaneme stabilnejší smer.
 
-**Veľký batch (napr. 256–1024):**
-- gradient je presnejší (priemerovaný cez viac vzoriek)
-- GPU je plne vyťažené → rýchly tréning
-- môže konvergovať do ostrých miním (horšia generalizácia)
-- potrebuje viac GPU pamäte
+Prečo nie celý dataset naraz? Musel by sa zmestiť do GPU pamäte. 946 obrázkov pri 224px = ~150MB tenzor, to je ešte OK, ale pri väčších datasetoch (státisíce obrázkov) to nie je možné.
 
-**32** je štandardný kompromis — dosť veľký na stabilný gradient, dosť malý aby sa zmestil do pamäte a zachoval dobrú generalizáciu.
+**Malý batch (napr. 4):** šumivý gradient, GPU nevyťažené, pomalé.
+**Veľký batch (napr. 512):** presný gradient, GPU plne vyťažené, rýchle — ale model môže konvergovať do horších miním.
+**32:** štandardný kompromis.
 
 ---
 
 ## 13. Čo je learning rate a prečo záleží
 
-Learning rate $\alpha$ určuje veľkosť kroku pri aktualizácii váh:
+Learning rate $\alpha$ určuje veľkosť kroku pri aktualizácii váhy.
 
-$$w \leftarrow w - \alpha \cdot \nabla_w \mathcal{L}$$
+Predstav si slepca ktorý hľadá najnižší bod v kopcovitej krajine. Každý krok urobí v smere kde terén klesá (gradient). Learning rate = dĺžka kroku.
 
-Predstav si hľadanie minima na kopcovitej krajine:
-- $\alpha$ príliš malý → robíš miniatúrne kroky, trvá to večne
-- $\alpha$ príliš veľký → preskočíš cez minimum, osciluje si, nekonverguješ
-- $\alpha$ správny → plynule klesáš do minima
+```
+príliš malý LR:  □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ ← minimum  (trvá večne)
+správny LR:      □   □   □   □   □ ← minimum              (plynulo klesá)
+príliš veľký LR: □           □           □           □     (preskakuje)
+```
 
-My testujeme tri hodnoty:
-- `0.001` — štandardný Adam LR, najčastejší v literatúre
-- `0.0001` — opatrnejší, pomalší
-- `0.01` — agresívny, môže byť nestabilný
+Pri príliš veľkom LR slepec skočí cez minimum na druhú stranu kopca, potom späť, a nikdy sa nezastaví.
+
+My testujeme tri hodnoty (0.001, 0.0001, 0.01) a vyberáme najlepšiu. `0.001` je štandardné pre Adam a potvrdilo sa ako optimálne aj v našom experimente.
 
 ---
 
@@ -385,120 +536,91 @@ Celkovo: **216 experimentov** (3 LR × 4 fracs × 3 modely × 3 veľkosti × 2 a
 - Gradient šumivý → nestabilné trénovanie, pomalší tréning celkovo
 - Môže pomôcť uniknúť lokálnym minimám (šum = náhodné skoky)
 
-**Záver:** 32 je vyvážená voľba pre tento dataset a GPU.
-
 ---
 
 ### `LEARNING_RATES = [0.001, 0.0001, 0.01]`
 
 **Ak použijem príliš veľké LR (napr. 0.1):**
-- Optimizer „preskakuje" cez minimu → val MAE osciluje alebo rastie
-- Model nekonverguje, výsledky sú náhodné
+- Optimizer preskakuje cez minimu → val MAE osciluje alebo rastie
+- Model nekonverguje vôbec
 
 **Ak použijem príliš malé LR (napr. 0.000001):**
 - Váhy sa menia len minimálne → za 20 epoch skoro žiadne zlepšenie
-- Tréning je stabilný, ale nezmyselne pomalý
 
-**Prečo testujeme tri hodnoty:** Optimálne LR závisí od architektúry a datasetu. Bez experimentu to nevieme vopred. `0.001` je štandardné pre Adam — čo sa potvrdilo aj v našich výsledkoch.
+**Prečo testujeme tri:** Optimálne LR závisí od architektúry a datasetu. Bez experimentu to nevieme vopred.
 
 ---
 
 ### `EPOCHS = 20`
 
 **Ak zvýšim na 100:**
-- Early stopping aj tak zastaví tréning najneskôr `PATIENCE` epoch po najlepšej
-- Fakticky: pri `PATIENCE=7` sa tréning zastaví max. 7 epoch po optimálnej — zvýšenie EPOCHS nad ~30 nemá takmer žiadny efekt
-- Výnimka: s nižším LR by sieť konvergovala pomalšie a viac epoch by pomohlo
+- Early stopping zastaví tréning aj tak najneskôr `PATIENCE` epoch po najlepšej
+- Zvýšenie nad ~30 epoch nemá pri tomto datasete takmer žiadny efekt
 
 **Ak znížim na 5:**
-- Model nemá čas konvergovať, validačná MAE ešte klesá ale zastavíme predčasne
-- Výsledky výrazne horšie
+- Model nemá čas konvergovať, výsledky výrazne horšie
 
 ---
 
 ### `PATIENCE = 7`
 
 **Ak zvýšim na 15:**
-- Tréning trvá dlhšie, tolerujeme dlhšiu stagnáciu
-- Môže zachytiť neskorú konvergenciu (MAE niekedy stagnuje a potom skokovo klesne)
-- Riziko: model sa medzičasom začne preučovať
+- Tolerujeme dlhšiu stagnáciu, môže zachytiť neskorú konvergenciu
+- Tréning trvá dlhšie, riziko overfittingu v čase čakania
 
 **Ak znížim na 2–3:**
-- Zastavíme príliš skoro — model možno ešte konvergoval
-- Vhodné len pre rýchle orientačné experimenty
+- Zastavíme príliš skoro, vhodné len pre rýchle orientačné experimenty
 
 ---
 
 ### `INPUT_SIZES = [128, 224, 320]`
 
-**Ak pridám menší vstup (64px):**
-- Možná strata informácie — pozícia slnka nemusí byť presne zachytená
-- Rýchlejší tréning
-- Pri oblohe kde záleží na globálnom rozložení môže byť 64px hranične dostačujúce
+**Ak pridám menší (64px):**
+- Možná strata informácie o pozícii slnka, rýchlejší tréning
 
-**Ak pridám väčší vstup (512px):**
-- Výrazne pomalší tréning (výpočty rastú kvadraticky s rozlíšením)
-- Pri 946 obrázkoch takmer istý overfitting
-- Väčšie GPU pamäťové nároky
+**Ak pridám väčší (512px):**
+- Výrazne pomalší tréning, pri 946 obrázkoch takmer istý overfitting
 
-**Prečo 128px vyhral:** Pre odhad žiarenia stačí vedieť „kde je slnko a koľko oblohy pokrývajú oblaky". 128px to zachytí. Väčší vstup pridáva komplexitu bez pridanej hodnoty pri malom datasete.
+**Prečo 128px vyhral:** Stačí na zachytenie globálneho rozloženia oblohy, väčší vstup pridáva komplexitu bez pridanej hodnoty.
 
 ---
 
 ### `TRAIN_FRACS = [0.25, 0.5, 0.75, 1.0]`
 
-Toto nie je hyperparameter — je to experiment na pochopenie koľko dát potrebujeme.
-
 | Frakcia | Vzorky | Výsledok |
-|---------|--------|---------|
-| 25 % | ~175 | R² záporné — model horší ako predpovedanie priemeru |
-| 50 % | ~330 | Výrazné zlepšenie — model začína zachytávať vzory |
+|---------|--------|----------|
+| 25 % | ~175 | R² záporné — horší ako predpovedanie priemeru |
+| 50 % | ~330 | Výrazné zlepšenie, model začína zachytávať vzory |
 | 75 % | ~497 | Ďalšie zlepšenie, krivka sa vyrovnáva |
 | 100 % | ~662 | Najlepší výsledok |
 
-**Záver:** Minimum pre zmysluplné výsledky je ~300–400 vzoriek pri transfer learningu.
+Minimum pre zmysluplné výsledky pri transfer learningu: ~300–400 vzoriek.
 
 ---
 
 ### Výber modelu
 
-**Ak by som pridal ResNet50 (25M parametrov):**
-- Hlbšia sieť, viac parametrov
-- Pri 946 obrázkoch pravdepodobne silný overfitting
-- Tréning pomalší, výsledky môžu byť horšie ako ResNet18
+**ResNet50 (25M parametrov):** pri 946 obrázkoch silný overfitting, výsledky pravdepodobne horšie.
 
-**Ak by som pridal ViT (Vision Transformer):**
-- Transformery vyžadujú omnoho viac dát ako CNN (typicky stovky tisíc obrázkov)
-- Pri 946 obrázkoch by takmer určite zlyhali
-- CNN majú vstavanú indukčnú biasovosť (lokálne spojenia, transliačná invariantnosť) ktorá pomáha pri malom datasete
+**ViT (Vision Transformer):** transformery potrebujú stovky tisíc obrázkov. Pri 946 by takmer určite zlyhali. CNN majú vstavanú vlastnosť „lokálne vzory sú dôležité" čo pomáha pri malom datasete; transformery to nemajú.
 
 ---
 
-### Augmentácia — čo iné by sme mohli skúsiť
+### Augmentácia — alternatívy
 
-Naša rotačná augmentácia ukázala, že nepomáha. Iné augmentácie by mohli byť vhodnejšie:
+**Horizontálny flip:** obloha je symetrická ľavo-pravý flip (nenarúša horizont) → mohlo by pomôcť.
 
-**Horizontálny flip (zrkadlenie):**
-- Obloha je fyzikálne symetrická ľavo-pravý flip — slnko môže byť na ľavej alebo pravej strane
-- Toto by mohlo pomôcť, keďže nenarúša horizont
+**Zmena jasu/kontrastu:** simuluje rôzne kamery na rôznych staniciach → mohlo by zlepšiť generalizáciu.
 
-**Zmena jasu/kontrastu:**
-- Simuluje rôzne podmienky osvetlenia kamery na rôznych staniciach
-- Mohlo by pomôcť generalizácii
-
-**Náhodné orezy (random crop):**
-- Riziko: odrežeme slnko → nezmyselný vstup
-- Menej vhodné pre tento typ dát
-
-**Záver:** Voľba augmentácie musí zodpovedať fyzike problému. Nie každá augmentácia je vhodná pre každú úlohu.
+**Náhodné orezy:** riziko orezania slnka z obrázka → menej vhodné.
 
 ---
 
 ### Čo by sa stalo s väčším datasetom
 
 | Dataset | Očakávané R² | Poznámka |
-|---------|-------------|---------|
+|---------|-------------|----------|
 | 946 (naše) | ~0.54 | Transfer learning, malý dataset |
 | ~5 000 | ~0.70–0.75 | Môžeme použiť väčšie modely |
-| ~50 000 | ~0.80–0.85 | Tréning od nuly možný |
-| Kompletné Eye2Sky | >0.90 | State-of-the-art metódy, temporálne modelovanie |
+| ~50 000 | ~0.80–0.85 | Tréning od nuly je možný |
+| Kompletné Eye2Sky | >0.90 | State-of-the-art, temporálne modelovanie |
