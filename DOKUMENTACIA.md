@@ -661,3 +661,136 @@ def main():
 Väčšina grafov dostane `best` (najlepší výsledok pre každú konfiguráciu). Iba `plot_lr_effect` dostane všetky `results` — potrebuje vidieť výsledky pre každé LR zvlášť, nie len to najlepšie.
 
 `default_size = 224 if 224 in sizes else sizes[0]` — predvolená veľkosť vstupu pre grafy je 224 (štandardná pre ImageNet). Ak v datasete chýba, vezme prvú dostupnú.
+
+---
+
+## Čo sa stane ak zmením hodnoty v kóde
+
+---
+
+### `BATCH_SIZE = 32`
+
+**Ak zvýšim (napr. 128):**
+- Každý krok rýchlejší, gradient presnejší (priemer cez viac vzoriek)
+- Model môže konvergovať do „ostrých" miním → horšia generalizácia na nové dáta
+- Menej krokov za epochu pri rovnako veľkom datasete
+
+**Ak znížim (napr. 8):**
+- Gradient šumivý → nestabilné trénovanie
+- GPU nie je plne vyťažené → pomalší tréning
+- Môže pomôcť uniknúť lokálnym minimám
+
+**32** je štandardný kompromis pre tento dataset a GPU.
+
+---
+
+### `LEARNING_RATES = [0.001, 0.0001, 0.01]`
+
+**Ak použijem príliš veľké LR (napr. 0.1):**
+- Optimizer preskakuje cez minimu → val MAE osciluje alebo rastie
+- Model nekonverguje vôbec
+
+**Ak použijem príliš malé LR (napr. 0.000001):**
+- Váhy sa menia minimálne → za 20 epoch skoro žiadne zlepšenie
+- Stabilný tréning, ale nezmyselne pomalý
+
+**Prečo testujeme tri:** Optimálne LR závisí od architektúry a datasetu, bez experimentu to nevieme. `0.001` je štandardné pre Adam — čo potvrdili aj naše výsledky.
+
+---
+
+### `EPOCHS = 20`
+
+**Ak zvýšim (napr. 100):**
+- Early stopping zastaví tréning aj tak najneskôr `PATIENCE` epoch po najlepšej
+- Zvýšenie nad ~30 epoch nemá pri tomto datasete takmer žiadny efekt
+- Výnimka: ak by sme výrazne znížili LR, pomalšia konvergencia by viac epoch využila
+
+**Ak znížim (napr. 5):**
+- Model nemá čas konvergovať, validačná MAE ešte klesá ale zastavíme predčasne
+- Výsledky výrazne horšie
+
+---
+
+### `PATIENCE = 7`
+
+**Ak zvýšim (napr. 15):**
+- Tolerujeme dlhšiu stagnáciu — môže zachytiť neskorú konvergenciu
+- Tréning trvá dlhšie, riziko overfittingu v čase čakania
+
+**Ak znížim (napr. 2–3):**
+- Zastavíme príliš skoro — model možno ešte konvergoval
+- Vhodné len pre rýchle orientačné experimenty
+
+---
+
+### `INPUT_SIZES = [128, 224, 320]`
+
+**Ak pridám menší (napr. 64px):**
+- Možná strata informácie o pozícii slnka
+- Rýchlejší tréning, menšia pamäťová náročnosť
+
+**Ak pridám väčší (napr. 512px):**
+- Výrazne pomalší tréning (výpočty rastú kvadraticky s rozlíšením)
+- Pri 946 obrázkoch takmer istý overfitting
+- Väčšie nároky na GPU pamäť
+
+**Prečo 128px vyhral:** Pre odhad žiarenia stačí vedieť kde je slnko a koľko oblohy pokrývajú oblaky — to 128px zachytí. Väčší vstup pridáva komplexitu bez pridanej hodnoty pri malom datasete.
+
+---
+
+### `TRAIN_FRACS = [0.25, 0.5, 0.75, 1.0]`
+
+Nie je hyperparameter na ladenie — je to experiment na pochopenie koľko dát potrebujeme.
+
+| Frakcia | Vzorky | Výsledok |
+|---------|--------|----------|
+| 25 % | ~175 | R² záporné — horší ako predpovedanie priemeru |
+| 50 % | ~330 | Výrazné zlepšenie, model začína zachytávať vzory |
+| 75 % | ~497 | Ďalšie zlepšenie, krivka sa vyrovnáva |
+| 100 % | ~662 | Najlepší výsledok |
+
+Minimum pre zmysluplné výsledky pri transfer learningu je ~300–400 vzoriek.
+
+---
+
+### `MODELS`
+
+**Ak pridám ResNet50 (25M parametrov):**
+- Hlbšia sieť, viac parametrov → pri 946 obrázkoch silný overfitting
+- Pomalší tréning, výsledky pravdepodobne horšie ako ResNet18
+
+**Ak pridám ViT (Vision Transformer):**
+- Transformery potrebujú omnoho viac dát (typicky stovky tisíc obrázkov)
+- Pri 946 obrázkoch by takmer určite zlyhali
+- CNN majú vstavanú indukčnú biasovosť (lokálne spojenia) ktorá pomáha pri malom datasete
+
+---
+
+### Augmentácia — alternatívy k rotácii
+
+Rotácia o 90° ukázala, že škodí. Iné augmentácie by mohli byť vhodnejšie:
+
+**Horizontálny flip:**
+- Obloha je fyzikálne symetrická ľavo-pravý flip (slnko môže byť na ľavej alebo pravej strane)
+- Nenarúša horizont → mohlo by pomôcť
+
+**Zmena jasu/kontrastu:**
+- Simuluje rôzne podmienky osvetlenia kamery na rôznych staniciach
+- Mohlo by zlepšiť generalizáciu naprieč stanicami
+
+**Náhodné orezy (random crop):**
+- Riziko orezania slnka z obrázka → nezmyselný vstup
+- Menej vhodné pre tento typ dát
+
+Voľba augmentácie musí zodpovedať fyzike problému — nie každá augmentácia je vhodná pre každú úlohu.
+
+---
+
+### Čo by sa stalo s väčším datasetom
+
+| Dataset | Očakávané R² | Poznámka |
+|---------|-------------|----------|
+| 946 (naše) | ~0.54 | Transfer learning, malý dataset |
+| ~5 000 | ~0.70–0.75 | Môžeme použiť väčšie modely |
+| ~50 000 | ~0.80–0.85 | Tréning od nuly je možný |
+| Kompletné Eye2Sky | >0.90 | State-of-the-art, temporálne modelovanie |
