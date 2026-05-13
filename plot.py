@@ -208,20 +208,24 @@ def plot_train_size_effect(results, size=224):
     if len(fracs) < 2:
         return
 
-    subset      = [r for r in results if r['input_size'] == size and r['augmentation']]
+    subset      = [r for r in results if r['input_size'] == size]
     model_names = list(dict.fromkeys(r['model'] for r in subset))
 
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for m in model_names:
-        n_trains = [next((r['n_train'] for r in subset if r['model']==m and r.get('train_frac')==f), None) for f in fracs]
-        maes     = [next((r['test_mae'] for r in subset if r['model']==m and r.get('train_frac')==f), None) for f in fracs]
-        ax.plot(n_trains, maes, marker='o', label=LABELS[m], color=COLORS[m], linewidth=2)
+    fig, axes = plt.subplots(1, 2, figsize=(16, 5))
 
-    ax.set_xlabel('Počet trénovacích vzoriek')
-    ax.set_ylabel('Test MAE (W/m²)')
-    ax.set_title('Vplyv počtu trénovacích vzoriek na MAE (s augmentáciou)')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    for ax, aug, title in [(axes[0], False, 'Bez augmentácie'),
+                           (axes[1], True,  'S augmentáciou')]:
+        s = [r for r in subset if r['augmentation'] == aug]
+        for m in model_names:
+            n_trains = [next((r['n_train'] for r in s if r['model']==m and r.get('train_frac')==f), None) for f in fracs]
+            maes     = [next((r['test_mae'] for r in s if r['model']==m and r.get('train_frac')==f), None) for f in fracs]
+            ax.plot(n_trains, maes, marker='o', label=LABELS[m], color=COLORS[m], linewidth=2)
+        ax.set_xlabel('Počet trénovacích vzoriek')
+        ax.set_ylabel('Test MAE (W/m²)')
+        ax.set_title(f'Vplyv počtu trénovacích vzoriek na MAE — {title}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
     fig.tight_layout()
     save(fig, 'train_size_effect.png')
 
